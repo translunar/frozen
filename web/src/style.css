@@ -127,16 +127,25 @@ html, body {
 
 .groundtrack-svg, .skyview-svg { display: block; width: 100%; height: 100%; }
 .groundtrack-svg .grat        { stroke: #1e2938; stroke-width: 1; }
-.groundtrack-svg .track-line  { fill: none; stroke: #4fd1c5; stroke-width: 1.5; }
+/* The full closed track is low-prominence context (it can be many revs for a high-N member);
+   the trailing ~1.2-rev window near the marker is the bright, legible line. */
+.groundtrack-svg .track-line  { fill: none; stroke: #4fd1c5; stroke-width: 1; opacity: 0.25; }
+.groundtrack-svg .track-line-recent { fill: none; stroke: #4fd1c5; stroke-width: 2; }
 .groundtrack-svg .subearth-dot { fill: #ffc24a; }
 .groundtrack-svg .label       { fill: #ffc24a; font-size: 10px; }
 .groundtrack-svg .tick        { fill: #5d6d80; font-size: 10px; }
 .groundtrack-svg .anim-marker { fill: #ffffff; stroke: #05070d; stroke-width: 1; }
 
 .skyview-svg .moon-disk    { fill: #9a9a9a; opacity: 0.18; }
-.skyview-svg .sky-clear    { fill: none; stroke: #4fd1c5; stroke-width: 1.5; }
-.skyview-svg .sky-transit  { fill: none; stroke: #e0a83a; stroke-width: 1.5; }
-.skyview-svg .sky-occulted { fill: none; stroke: #c74a4a; stroke-width: 1.5; stroke-dasharray: 3 3; opacity: 0.5; }
+/* Same low-prominence-full / bright-recent split as the ground track (see above); the
+   `.recent` modifier class is layered onto the same sky-* classification class so occulted
+   segments keep their dashed styling in both the dim and bright windows. */
+.skyview-svg .sky-clear    { fill: none; stroke: #4fd1c5; stroke-width: 1; opacity: 0.25; }
+.skyview-svg .sky-transit  { fill: none; stroke: #e0a83a; stroke-width: 1; opacity: 0.25; }
+.skyview-svg .sky-occulted { fill: none; stroke: #c74a4a; stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.15; }
+.skyview-svg .sky-clear.recent    { stroke-width: 2.5; opacity: 1; }
+.skyview-svg .sky-transit.recent  { stroke-width: 2.5; opacity: 1; }
+.skyview-svg .sky-occulted.recent { stroke-width: 2.5; opacity: 0.6; }
 .skyview-svg .tick    { fill: #5d6d80; font-size: 10px; }
 .skyview-svg .legend  { fill: #9fb0c4; font-size: 10px; }
 .skyview-svg .anim-marker { fill: #ffffff; stroke: #05070d; stroke-width: 1; }

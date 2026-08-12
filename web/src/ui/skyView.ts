@@ -1,15 +1,22 @@
 import { scaleLinear } from 'd3-scale';
 import type { ScaleLinear } from 'd3-scale';
 import { MOON_RADIUS_KM } from '../scene';
-import { samplePosition } from '../state';
+import { samplePosition, trailingWindowIndices } from '../state';
 
 // Earth plane-of-sky panel: the satellite's apparent track against the Moon's disk as seen
 // from Earth (viewer at −x looking toward +x). Purely driven from the outside via setMember /
 // setAnimTime — no store subscription of its own (see bottomTabs.ts, which owns that wiring).
+//
+// The full closed track (N revs, N = resonanceN) is drawn at low prominence — for members with
+// many revs it reads as clutter — while a bright "recent" polyline covers the trailing ~1.2
+// revs ending at the animated marker, rebuilt each throttled tick from `points` via
+// trailingWindowIndices. The recent window keeps the clear/transit/occulted classification
+// coloring, same as the dim full track.
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MARGIN = { top: 14, right: 14, bottom: 22, left: 14 };
 const MARKER_THROTTLE_MS = 100; // ~10 Hz, per the animated-marker DOM-churn budget
+const RECENT_WINDOW_REVS = 1.2;
 
 export type SkyClass = 'occulted' | 'transit' | 'clear';
 
@@ -74,7 +81,7 @@ function segmentsByClass(points: SkyPoint[]): SkyPoint[][] {
 }
 
 export interface SkyViewPanel {
-  setMember(traj: Float32Array | null, periodS: number): void;
+  setMember(traj: Float32Array | null, periodS: number, resonanceN: number): void;
   setAnimTime(t: number): void;
   refresh(): void;
 }
@@ -98,12 +105,19 @@ export function mountSkyViewPanel(container: HTMLElement): SkyViewPanel {
 
   let traj: Float32Array | null = null;
   let periodS = 0;
+  let resonanceN = 0;
   let points: SkyPoint[] = [];
   let animTimeS = 0;
   let lastMarkerDrawMs = 0;
   let markerEl: SVGElement | null = null;
+  let recentGroupEl: SVGElement | null = null;
   let xScale: ScaleLinear<number, number> | null = null;
   let yScale: ScaleLinear<number, number> | null = null;
+
+  /** Trailing window duration: ~1.2 revs, each rev being periodS/resonanceN long. */
+  function recentWindowS(): number {
+    return resonanceN > 0 ? (RECENT_WINDOW_REVS * periodS) / resonanceN : 0;
+  }
 
   function positionMarker(): void {
     if (!traj || !xScale || !yScale || !markerEl || periodS <= 0) return;
@@ -113,9 +127,26 @@ export function mountSkyViewPanel(container: HTMLElement): SkyViewPanel {
     markerEl.setAttribute('cy', String(yScale(sp.y)));
   }
 
+  function updateRecent(): void {
+    if (!recentGroupEl || !xScale || !yScale || points.length === 0 || periodS <= 0) return;
+    const x = xScale;
+    const y = yScale;
+    recentGroupEl.innerHTML = '';
+    const idx = trailingWindowIndices(points.length, periodS, animTimeS, recentWindowS());
+    const recentPoints = idx.map((i) => points[i]);
+    for (const seg of segmentsByClass(recentPoints)) {
+      if (seg.length < 2) continue;
+      const pts = seg.map((p) => `${x(p.x)},${y(p.y)}`).join(' ');
+      recentGroupEl.appendChild(el('polyline', {
+        points: pts, class: `sky-${seg[seg.length - 1].cls} recent`,
+      }));
+    }
+  }
+
   function draw(): void {
     svg.innerHTML = '';
     markerEl = null;
+    recentGroupEl = null;
     xScale = null;
     yScale = null;
     const w = container.clientWidth || 800;
@@ -149,6 +180,9 @@ export function mountSkyViewPanel(container: HTMLElement): SkyViewPanel {
       svg.appendChild(el('polyline', { points: pts, class: `sky-${seg[seg.length - 1].cls}` }));
     }
 
+    recentGroupEl = el('g', { class: 'sky-recent-group' });
+    svg.appendChild(recentGroupEl);
+
     for (const t of x.ticks(5)) {
       if (t === 0) continue;
       svg.appendChild(text(
@@ -169,15 +203,17 @@ export function mountSkyViewPanel(container: HTMLElement): SkyViewPanel {
 
     markerEl = el('circle', { cx: '0', cy: '0', r: '4', class: 'anim-marker' });
     svg.appendChild(markerEl);
+    updateRecent();
     positionMarker();
   }
 
   window.addEventListener('resize', () => draw());
 
   return {
-    setMember(t, p) {
+    setMember(t, p, n) {
       traj = t;
       periodS = p;
+      resonanceN = n;
       points = t ? skyPoints(t) : [];
       draw();
     },
@@ -186,6 +222,7 @@ export function mountSkyViewPanel(container: HTMLElement): SkyViewPanel {
       const now = performance.now();
       if (now - lastMarkerDrawMs < MARKER_THROTTLE_MS) return;
       lastMarkerDrawMs = now;
+      updateRecent();
       positionMarker();
     },
     refresh() {

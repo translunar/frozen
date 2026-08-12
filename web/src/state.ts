@@ -101,6 +101,29 @@ export function samplePosition(traj: Float32Array, period: number, t: number): [
   ];
 }
 
+/**
+ * Sample indices covering a trailing time window ending at `t`, over a closed trajectory of
+ * `sampleCount` uniformly-spaced samples spanning exactly one `period` (same layout as
+ * `samplePosition`: sample i sits at time (i/sampleCount)*period, wrapping back to sample 0).
+ * Returned indices are ordered oldest-to-newest and end at the sample nearest `t`; the window
+ * wraps around the seam (index sampleCount-1 -> 0) and clamps to the full loop when `windowS`
+ * exceeds `period`, rather than repeating indices from a second lap.
+ */
+export function trailingWindowIndices(
+  sampleCount: number, period: number, t: number, windowS: number,
+): number[] {
+  if (sampleCount <= 0 || !(period > 0)) return [];
+  const tt = ((t % period) + period) % period;
+  const endIdx = Math.floor((tt / period) * sampleCount) % sampleCount;
+  const spanS = Math.min(Math.max(0, windowS), period);
+  const count = Math.min(sampleCount, Math.max(1, Math.round((spanS / period) * sampleCount) + 1));
+  const out: number[] = [];
+  for (let k = count - 1; k >= 0; k--) {
+    out.push(((endIdx - k) % sampleCount + sampleCount) % sampleCount);
+  }
+  return out;
+}
+
 /** Revolutions completed: the closure period contains exactly `resonanceN` revs. */
 export function elapsedRevs(t: number, period: number, resonanceN: number): number {
   return period > 0 ? (t / period) * resonanceN : 0;

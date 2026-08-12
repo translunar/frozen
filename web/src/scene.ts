@@ -49,11 +49,19 @@ export interface Stage {
 const STACK_COLOR = 0x3a6a96;
 const SELECTED_COLOR = 0xffc24a;
 const GHOST_COLOR = 0x777777;
-// The selected material is opaque (not transparent like the stack/ghost), so three.js already
-// draws it before the transparent stack regardless of renderOrder — the opaque bucket renders
-// in full ahead of the transparent one. This renderOrder is therefore harmless but not load-
-// bearing; kept in case the selected material ever becomes transparent too.
-const SELECTED_RENDER_ORDER = 1;
+// Explicit paint order within three.js's transparent bucket, back to front. All four layers
+// below are `transparent: true` so they land in the same sorted bucket and renderOrder (not
+// distance) decides draw order: the 41-loop family stack first, the pinned ghost next, the
+// selected member on top, and the satellite marker/trail above everything. Previously
+// selectedMat was opaque, so three.js drew it in the opaque bucket ahead of the transparent
+// stack regardless of renderOrder — but the stack's 41 heavily-overlapping translucent loops
+// still composited over it afterward and buried the amber selection. Moving it into the
+// transparent bucket (and giving it depthWrite:false peers with correct renderOrder) fixes
+// that; see also the satellite marker/trail in anim.ts, which uses SATELLITE_RENDER_ORDER.
+export const STACK_RENDER_ORDER = 0;
+export const GHOST_RENDER_ORDER = 1;
+export const SELECTED_RENDER_ORDER = 2;
+export const SATELLITE_RENDER_ORDER = 3;
 
 function makeLoop(
   xyzKm: Float32Array, material: THREE.LineBasicMaterial, renderOrder = 0,
@@ -185,9 +193,17 @@ export function createStage(container: HTMLElement): Stage {
   ));
 
   // --- Orbit layers -----------------------------------------------------
-  const stackMat = new THREE.LineBasicMaterial({ color: STACK_COLOR, transparent: true, opacity: 0.06 });
-  const selectedMat = new THREE.LineBasicMaterial({ color: SELECTED_COLOR });
-  const ghostMat = new THREE.LineBasicMaterial({ color: GHOST_COLOR, transparent: true, opacity: 0.85 });
+  // depthWrite:false on the stack/ghost/selected materials means none of them occlude each
+  // other via the depth buffer — paint order among them is decided purely by renderOrder
+  // above. They still depth-test against (and are correctly hidden behind) the opaque Moon,
+  // which writes depth normally.
+  const stackMat = new THREE.LineBasicMaterial({
+    color: STACK_COLOR, transparent: true, opacity: 0.06, depthWrite: false,
+  });
+  const selectedMat = new THREE.LineBasicMaterial({ color: SELECTED_COLOR, transparent: true, opacity: 1.0 });
+  const ghostMat = new THREE.LineBasicMaterial({
+    color: GHOST_COLOR, transparent: true, opacity: 0.85, depthWrite: false,
+  });
   const stack = new THREE.Group();
   const selected = new THREE.Group();
   const ghost = new THREE.Group();
@@ -203,7 +219,7 @@ export function createStage(container: HTMLElement): Stage {
     controls,
     setFamilyStack(loops) {
       clearGroup(stack);
-      for (const l of loops) stack.add(makeLoop(l, stackMat));
+      for (const l of loops) stack.add(makeLoop(l, stackMat, STACK_RENDER_ORDER));
     },
     setSelected(traj) {
       clearGroup(selected);
@@ -211,7 +227,7 @@ export function createStage(container: HTMLElement): Stage {
     },
     setGhost(traj) {
       clearGroup(ghost);
-      if (traj) ghost.add(makeLoop(traj, ghostMat));
+      if (traj) ghost.add(makeLoop(traj, ghostMat, GHOST_RENDER_ORDER));
     },
     setGraticule(visible) {
       graticule.visible = visible;

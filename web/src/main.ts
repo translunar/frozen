@@ -118,7 +118,7 @@ async function boot(): Promise<void> {
     stage.setFamilyStack(loops);
     stage.setSelected(traj);
     satellite.setMember(traj, member.period_s, family.resonance_n);
-    bottom.setMember(traj, member);
+    bottom.setMember(traj, member, family.resonance_n);
     overlay.setSelected(member, family.resonance_n);
     prefetchNeighbors(CATALOG_BASE, family, idx);
   }

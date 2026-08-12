@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   comboById, createStore, elapsedRevs, familyByN,
   librationPeriodMonths, nearestMemberIndex, samplePosition, stabilityMargin, symlog,
-  windingAngleDeg,
+  trailingWindowIndices, windingAngleDeg,
 } from './state';
 import type { AppState } from './state';
 import { makeCatalog } from './testFixtures';
@@ -105,6 +105,32 @@ describe('samplePosition', () => {
     const fwd = samplePosition(square, 4, 8.25);
     expect(fwd[0]).toBeCloseTo(0.75, 12);
     expect(fwd[1]).toBeCloseTo(0.25, 12);
+  });
+});
+
+describe('trailingWindowIndices', () => {
+  it('returns a non-wrapping trailing window ending at the sample for t', () => {
+    // 10 samples over period 100: sample i at time 10*i. t=50 -> sample 5; a 20s window
+    // covers 2 sample steps back, i.e. 3 samples: [3, 4, 5].
+    expect(trailingWindowIndices(10, 100, 50, 20)).toEqual([3, 4, 5]);
+  });
+
+  it('wraps around the seam back to the end of the array', () => {
+    // t=5 -> sample 0; a 30s window (3 sample steps) wraps to [7, 8, 9, 0].
+    expect(trailingWindowIndices(10, 100, 5, 30)).toEqual([7, 8, 9, 0]);
+  });
+
+  it('clamps a window longer than the period to the full loop, not a repeated lap', () => {
+    const idx = trailingWindowIndices(10, 100, 0, 250);
+    expect(idx).toHaveLength(10);
+    expect(idx).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
+    expect(new Set(idx).size).toBe(10); // no index repeated from a second lap
+  });
+
+  it('handles degenerate inputs without throwing', () => {
+    expect(trailingWindowIndices(0, 100, 5, 20)).toEqual([]);
+    expect(trailingWindowIndices(10, 0, 5, 20)).toEqual([]);
+    expect(trailingWindowIndices(10, -5, 5, 20)).toEqual([]);
   });
 });
 

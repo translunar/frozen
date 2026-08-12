@@ -14,7 +14,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
 
 export interface BottomPanel {
   setFamily(family: Family): void;
-  setMember(traj: Float32Array | null, member: Member): void;
+  setMember(traj: Float32Array | null, member: Member, resonanceN: number): void;
   setAnimTime(t: number): void;
   refresh(): void;
 }
@@ -77,9 +77,9 @@ export function mountBottomPanel(container: HTMLElement, store: Store): BottomPa
     setFamily(family) {
       metrics.setFamily(family);
     },
-    setMember(traj, member) {
-      moon.setMember(traj, member.period_s);
-      earth.setMember(traj, member.period_s);
+    setMember(traj, member, resonanceN) {
+      moon.setMember(traj, member.period_s, resonanceN);
+      earth.setMember(traj, member.period_s, resonanceN);
     },
     setAnimTime(t) {
       moon.setAnimTime(t);

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { KM_TO_SCENE } from './scene';
+import { KM_TO_SCENE, SATELLITE_RENDER_ORDER } from './scene';
 import { samplePosition } from './state';
 import type { Store } from './state';
 
@@ -54,10 +54,16 @@ export interface Satellite {
 export function createSatellite(): Satellite {
   const group = new THREE.Group();
 
+  // transparent:true (even at opacity 1) puts the marker in three.js's sorted transparent
+  // bucket instead of the opaque one, so SATELLITE_RENDER_ORDER actually takes effect against
+  // the translucent family stack — see scene.ts for the full renderOrder scheme. Without this,
+  // an opaque marker would still render in the opaque pass ahead of the stack and could read as
+  // dimmed/buried under the accumulated blend of many overlapping stack loops drawn afterward.
   const marker = new THREE.Mesh(
     new THREE.SphereGeometry(0.09, 16, 12),
-    new THREE.MeshBasicMaterial({ color: 0xffffff }),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1.0 }),
   );
+  marker.renderOrder = SATELLITE_RENDER_ORDER;
   group.add(marker);
 
   const positions = new Float32Array(TRAIL_POINTS * 3);
@@ -69,8 +75,9 @@ export function createSatellite(): Satellite {
   // background instead, which reads as a fading trail on the dark stage.
   const trail = new THREE.Line(
     trailGeo,
-    new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }),
+    new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false }),
   );
+  trail.renderOrder = SATELLITE_RENDER_ORDER;
   group.add(trail);
 
   let traj: Float32Array | null = null;

@@ -1,14 +1,20 @@
 import { scaleLinear } from 'd3-scale';
 import type { ScaleLinear } from 'd3-scale';
-import { samplePosition } from '../state';
+import { samplePosition, trailingWindowIndices } from '../state';
 
 // Moon ground-track panel: the selected member's sub-satellite point in the Moon-fixed
 // rotating frame, plotted equirectangular. Purely driven from the outside via setMember /
 // setAnimTime — no store subscription of its own (see bottomTabs.ts, which owns that wiring).
+//
+// The full closed track (N revs, N = resonanceN) is drawn at low prominence — for members with
+// many revs it reads as clutter — while a bright "recent" polyline covers the trailing ~1.2
+// revs ending at the animated marker, rebuilt each throttled tick from `track` via
+// trailingWindowIndices so it always shows where the satellite has actually just been.
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MARGIN = { top: 14, right: 14, bottom: 22, left: 34 };
 const MARKER_THROTTLE_MS = 100; // ~10 Hz, per the animated-marker DOM-churn budget
+const RECENT_WINDOW_REVS = 1.2;
 
 export interface LatLon { lat: number; lon: number }
 
@@ -57,7 +63,7 @@ export function latDomain(points: LatLon[]): [number, number] {
 }
 
 export interface MoonTrackPanel {
-  setMember(traj: Float32Array | null, periodS: number): void;
+  setMember(traj: Float32Array | null, periodS: number, resonanceN: number): void;
   setAnimTime(t: number): void;
   refresh(): void;
 }
@@ -81,12 +87,19 @@ export function mountMoonTrackPanel(container: HTMLElement): MoonTrackPanel {
 
   let traj: Float32Array | null = null;
   let periodS = 0;
+  let resonanceN = 0;
   let track: LatLon[] = [];
   let animTimeS = 0;
   let lastMarkerDrawMs = 0;
   let markerEl: SVGElement | null = null;
+  let recentGroupEl: SVGElement | null = null;
   let xScale: ScaleLinear<number, number> | null = null;
   let yScale: ScaleLinear<number, number> | null = null;
+
+  /** Trailing window duration: ~1.2 revs, each rev being periodS/resonanceN long. */
+  function recentWindowS(): number {
+    return resonanceN > 0 ? (RECENT_WINDOW_REVS * periodS) / resonanceN : 0;
+  }
 
   function positionMarker(): void {
     if (!traj || !xScale || !yScale || !markerEl || periodS <= 0) return;
@@ -96,9 +109,26 @@ export function mountMoonTrackPanel(container: HTMLElement): MoonTrackPanel {
     markerEl.setAttribute('cy', String(yScale(lat)));
   }
 
+  function updateRecent(): void {
+    if (!recentGroupEl || !xScale || !yScale || track.length === 0 || periodS <= 0) return;
+    const x = xScale;
+    const y = yScale;
+    recentGroupEl.innerHTML = '';
+    const idx = trailingWindowIndices(track.length, periodS, animTimeS, recentWindowS());
+    const pts = idx.map((i) => track[i]);
+    for (const seg of splitAtWraps(pts)) {
+      if (seg.length < 2) continue;
+      recentGroupEl.appendChild(el('polyline', {
+        points: seg.map((p) => `${x(p.lon)},${y(p.lat)}`).join(' '),
+        class: 'track-line-recent',
+      }));
+    }
+  }
+
   function draw(): void {
     svg.innerHTML = '';
     markerEl = null;
+    recentGroupEl = null;
     xScale = null;
     yScale = null;
     const w = container.clientWidth || 800;
@@ -135,6 +165,9 @@ export function mountMoonTrackPanel(container: HTMLElement): MoonTrackPanel {
       svg.appendChild(el('polyline', { points: pts, class: 'track-line' }));
     }
 
+    recentGroupEl = el('g', { class: 'track-recent-group' });
+    svg.appendChild(recentGroupEl);
+
     svg.appendChild(el('circle', { cx: String(x(0)), cy: String(y(0)), r: '3', class: 'subearth-dot' }));
     svg.appendChild(text(
       { x: String(x(0) + 6), y: String(y(0) - 6), class: 'label' }, 'sub-Earth',
@@ -145,15 +178,17 @@ export function mountMoonTrackPanel(container: HTMLElement): MoonTrackPanel {
 
     markerEl = el('circle', { cx: '0', cy: '0', r: '4', class: 'anim-marker' });
     svg.appendChild(markerEl);
+    updateRecent();
     positionMarker();
   }
 
   window.addEventListener('resize', () => draw());
 
   return {
-    setMember(t, p) {
+    setMember(t, p, n) {
       traj = t;
       periodS = p;
+      resonanceN = n;
       track = t ? groundTrack(t) : [];
       draw();
     },
@@ -162,6 +197,7 @@ export function mountMoonTrackPanel(container: HTMLElement): MoonTrackPanel {
       const now = performance.now();
       if (now - lastMarkerDrawMs < MARKER_THROTTLE_MS) return;
       lastMarkerDrawMs = now;
+      updateRecent();
       positionMarker();
     },
     refresh() {

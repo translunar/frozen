@@ -23,24 +23,47 @@ labeled by its resonance N (revolutions per closure). Continuation runs to ±40
 members per seed at a step size ds0 = 2e-2, so families span wide periapsis-altitude
 ranges rather than a narrow neighborhood around the seed solution.
 
-## Quickstart
+## Getting started
 
-Prerequisites: a Rust toolchain (stable) and Node 20+.
+Prerequisites:
 
-```bash
-# 1. Generate a catalog. The dev config is small and takes about a minute:
-cargo run -p elfo-catalog --release -- gen --config web/dev-catalog.toml --out web/public/catalog
+- Rust (stable toolchain, via [rustup](https://rustup.rs))
+- Node 20+
 
-#    ...or generate the real one (minutes to tens of minutes):
-cargo run -p elfo-catalog --release -- gen --config catalog.toml --out web/public/catalog
+Steps, from a fresh clone of `git@github.com:translunar/frozen.git`:
 
-# 2. Run the cockpit.
-cd web
-npm install
-npm run dev
-```
+1. Clone the repo:
 
-Generated catalog data is git-ignored; only the generator configs are committed.
+   ```bash
+   git clone git@github.com:translunar/frozen.git
+   cd frozen
+   ```
+
+2. Generate a catalog. Nothing renders until this step has produced
+   `web/public/catalog/` — generated catalog data is git-ignored, so it does not
+   ship with the clone and must be generated locally every time you check the repo
+   out fresh. Two options:
+
+   ```bash
+   # Dev config: small, fast, good enough for a quick look (~1 minute).
+   cargo run -p elfo-catalog --release -- gen --config web/dev-catalog.toml --out web/public/catalog
+
+   #    ...or the real config: full sweep (15-45 minutes depending on machine).
+   cargo run -p elfo-catalog --release -- gen --config catalog.toml --out web/public/catalog
+   ```
+
+3. Install dependencies and start the dev server:
+
+   ```bash
+   cd web
+   npm install
+   npm run dev
+   ```
+
+4. Open <http://localhost:5173>.
+
+`web/public/moon.jpg` (the Moon texture) ships in the repo and needs no extra
+step — only the generated catalog is git-ignored.
 
 ## Using the cockpit
 
