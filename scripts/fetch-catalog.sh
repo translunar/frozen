@@ -18,14 +18,11 @@ else
   tag_label="latest"
 fi
 
-# Resolve the repo root regardless of cwd: prefer `git rev-parse`, fall back
-# to the script's own location.
-if repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
-  :
-else
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  repo_root="$(cd "${script_dir}/.." && pwd)"
-fi
+# Resolve the repo root from the script's own location — never from cwd's git
+# repo, which could be a different repository entirely when this script is
+# invoked by absolute path.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
 
 catalog_dir="${repo_root}/web/public/catalog"
 
