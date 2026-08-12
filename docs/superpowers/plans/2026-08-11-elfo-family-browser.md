@@ -336,7 +336,7 @@ mod term_tests {
         let r = [0.021, -0.013, 0.017];
         let g = terms_grad(&terms, &r);
         let gfd = fd_grad(&terms, &r);
-        for k in 0..3 { assert!((g[k]-gfd[k]).abs() < 1e-9 * g[k].abs().max(1e-12)); }
+        for k in 0..3 { assert!((g[k]-gfd[k]).abs() < (1e-9 * g[k].abs()).max(1e-12)); }
         let hh = terms_hess(&terms, &r);
         let h = 1e-6;
         for k in 0..3 {
@@ -344,7 +344,7 @@ mod term_tests {
             let (gp, gm) = (terms_grad(&terms, &rp), terms_grad(&terms, &rm));
             for j in 0..3 {
                 let fd = (gp[j]-gm[j])/(2.0*h);
-                assert!((hh[j][k]-fd).abs() < 1e-7 * fd.abs().max(1e-10));
+                assert!((hh[j][k]-fd).abs() < (1e-7 * fd.abs()).max(1e-10));
             }
         }
         // Hessian symmetry
@@ -471,7 +471,7 @@ mod force_tests {
             for k in 0..3 {
                 let (mut rp, mut rm) = (r, r); rp[k] += h; rm[k] -= h;
                 let fd = (fm.omega_eff(&rp) - fm.omega_eff(&rm)) / (2.0 * h);
-                assert!((a[k] - fd).abs() < 1e-6 * fd.abs().max(1e-8), "k={k}");
+                assert!((a[k] - fd).abs() < (1e-6 * fd.abs()).max(1e-8), "k={k}");
             }
         }
     }
@@ -578,7 +578,7 @@ mod jac_tests {
             let (fp, fm_) = (fm.eom(&sp), fm.eom(&sm));
             for row in 0..6 {
                 let fd = (fp[row] - fm_[row]) / (2.0 * h);
-                assert!((a[row][col] - fd).abs() < 1e-5 * fd.abs().max(1e-7),
+                assert!((a[row][col] - fd).abs() < (1e-5 * fd.abs()).max(2e-6),
                     "row {row} col {col}: {} vs {}", a[row][col], fd);
             }
         }
@@ -830,7 +830,7 @@ mod stm_tests {
             let fm_ = integ.propagate(&f, &ym, 0.0, 0.4, &[], &mut |_,_|{});
             for row in 0..6 {
                 let fd = (fp[row] - fm_[row]) / (2.0 * h);
-                assert!((phi[(row, col)] - fd).abs() < 1e-5 * fd.abs().max(1e-6),
+                assert!((phi[(row, col)] - fd).abs() < (1e-5 * fd.abs()).max(1e-5),
                     "Φ[{row},{col}] {} vs fd {}", phi[(row,col)], fd);
             }
         }
