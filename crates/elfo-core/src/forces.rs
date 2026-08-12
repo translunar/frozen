@@ -1,4 +1,5 @@
 use crate::constants::*;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Term { pub c: f64, pub p: [i32; 3], pub n: i32 }
@@ -66,6 +67,57 @@ pub fn harmonic_terms(j2: bool, c22: bool, j3: bool) -> Vec<Term> {
     v
 }
 
+pub const EARTH_POS: [f64; 3] = [-1.0, 0.0, 0.0];
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ForceModel { pub j2: bool, pub c22: bool, pub j3: bool, pub earth: bool }
+
+impl ForceModel {
+    pub fn harmonics(&self) -> Vec<Term> { harmonic_terms(self.j2, self.c22, self.j3) }
+
+    fn bx(&self) -> f64 { if self.earth { -(1.0 - MU) } else { 0.0 } }
+
+    pub fn omega_eff(&self, r: &[f64;3]) -> f64 {
+        let bx = self.bx();
+        let rn = (r[0]*r[0]+r[1]*r[1]+r[2]*r[2]).sqrt();
+        let mut u = 0.5 * ((r[0]-bx)*(r[0]-bx) + r[1]*r[1]) + MU_MOON_ND / rn;
+        if self.earth {
+            let d = [r[0]-EARTH_POS[0], r[1], r[2]];
+            u += MU_EARTH_ND / (d[0]*d[0]+d[1]*d[1]+d[2]*d[2]).sqrt();
+        }
+        u + terms_value(&self.harmonics(), r)
+    }
+
+    pub fn accel(&self, s: &[f64;6]) -> [f64;3] {
+        let (r, v) = ([s[0],s[1],s[2]], [s[3],s[4],s[5]]);
+        let bx = self.bx();
+        let rn2 = r[0]*r[0]+r[1]*r[1]+r[2]*r[2];
+        let r3 = rn2 * rn2.sqrt();
+        let mut a = [
+            (r[0]-bx) + 2.0*v[1] - MU_MOON_ND*r[0]/r3,
+            r[1]      - 2.0*v[0] - MU_MOON_ND*r[1]/r3,
+                                 - MU_MOON_ND*r[2]/r3,
+        ];
+        if self.earth {
+            let d = [r[0]+1.0, r[1], r[2]];
+            let dn2 = d[0]*d[0]+d[1]*d[1]+d[2]*d[2];
+            let d3 = dn2 * dn2.sqrt();
+            for k in 0..3 { a[k] -= MU_EARTH_ND * d[k] / d3; }
+        }
+        let g = terms_grad(&self.harmonics(), &r);
+        [a[0]+g[0], a[1]+g[1], a[2]+g[2]]
+    }
+
+    pub fn eom(&self, s: &[f64;6]) -> [f64;6] {
+        let a = self.accel(s);
+        [s[3], s[4], s[5], a[0], a[1], a[2]]
+    }
+
+    pub fn energy(&self, s: &[f64;6]) -> f64 {
+        0.5*(s[3]*s[3]+s[4]*s[4]+s[5]*s[5]) - self.omega_eff(&[s[0],s[1],s[2]])
+    }
+}
+
 #[cfg(test)]
 mod term_tests {
     use super::*;
@@ -103,5 +155,36 @@ mod term_tests {
         let terms = harmonic_terms(true, false, false);
         assert!(terms_value(&terms, &[0.0, 0.0, 0.01]) < 0.0);
         assert!(terms_value(&terms, &[0.01, 0.0, 0.0]) > 0.0);
+    }
+}
+
+#[cfg(test)]
+mod force_tests {
+    use super::*;
+    #[test]
+    fn accel_is_gradient_of_omega_eff_at_zero_velocity() {
+        for fm in [
+            ForceModel { j2: true, c22: true, j3: true, earth: true },
+            ForceModel { j2: true, c22: false, j3: true, earth: false },
+        ] {
+            let r = [0.019, -0.011, 0.014];
+            let s = [r[0], r[1], r[2], 0.0, 0.0, 0.0];
+            let a = fm.accel(&s);
+            let h = 1e-7;
+            for k in 0..3 {
+                let (mut rp, mut rm) = (r, r); rp[k] += h; rm[k] -= h;
+                let fd = (fm.omega_eff(&rp) - fm.omega_eff(&rm)) / (2.0 * h);
+                assert!((a[k] - fd).abs() < (1e-6 * fd.abs()).max(1e-8), "k={k}");
+            }
+        }
+    }
+    #[test]
+    fn l1_direction_sanity() {
+        // between Moon and Earth (x<0), net x-accel at rest points toward Earth
+        // beyond L1 (|x| large), toward Moon inside L1 (|x| small)
+        let fm = ForceModel { j2: false, c22: false, j3: false, earth: true };
+        let inside  = fm.accel(&[-0.05, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        let outside = fm.accel(&[-0.40, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        assert!(inside[0] > 0.0 && outside[0] < 0.0);
     }
 }
