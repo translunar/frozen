@@ -7,9 +7,10 @@
 
 A tool for building mission-design intuition about elliptical lunar frozen orbits
 (ELFOs): browse precomputed frozen-orbit families in the Earth-Moon rotating frame,
-animate members, see their (automatically repeating) lunar ground tracks, and see
-how the families change when individual gravitational terms (J2, C22, J3, Earth
-third body) are removed — the "which terms hold this orbit together" question.
+animate members, and see how the families change when individual gravitational
+terms (J2, C22, J3, Earth third body) are removed — the "which terms hold this
+orbit together" question. (Ground-track and Earth-visibility views are phase 2;
+see Roadmap.)
 
 Primary user: Juno, for personal mission-design intuition. Presentability to
 customers/collaborators is a stretch goal, served by the web-app form factor
@@ -36,12 +37,18 @@ members, **only frozen orbits shown** — not an initial-condition tuning sandbo
   locked to the Earth-Moon line) and the Earth as a fixed third body, the system
   is autonomous. Frozen orbits = periodic orbits, found by differential
   correction + continuation, exactly as NRHO families are.
-- **Repeating ground tracks are automatic.** The Moon's surface is fixed in the
-  rotating frame (librations idealized away), so every rotating-frame-periodic
-  orbit has a closed, repeating ground track with repeat period equal to its
-  closure period. Families are labeled by resonance N (revs per closure). The
-  synodic month becomes dynamically meaningful in phase 2: with the Sun on, only
-  members commensurate with the synodic forcing stay strictly periodic.
+- **Repeating ground tracks are automatic (and the track view is deferred).**
+  The Moon's surface is fixed in the rotating frame (librations idealized away),
+  so every rotating-frame-periodic orbit has a closed, repeating ground track
+  with repeat period equal to its closure period. Families are labeled by
+  resonance N (revs per closure). Because repetition is guaranteed by
+  construction, the ground-track *display* is not load-bearing and moves to
+  phase 2, along with an Earth-visibility overlay (Earth is fixed at −x, so
+  occultation windows are static geometry, repeating with the orbit). Both are
+  client-side derivations from already-stored trajectory data — no schema
+  impact. The synodic month becomes dynamically meaningful in phase 2: with the
+  Sun on, only members commensurate with the synodic forcing stay strictly
+  periodic.
 - **Known idealizations** (documented in-app where relevant): the Moon is
   modeled as rotating at constant rate with spin axis perpendicular to the
   Earth-Moon orbit plane, so its surface is exactly static in the rotating
@@ -84,14 +91,15 @@ API boundaries. Each term behind a boolean in a `ForceModel` config:
 | Moon point mass | always on | |
 | J2, C22, J3 | closed-form accelerations | individually toggleable; static in this frame. Closed-form (not generic degree-N) because generic normalized-harmonic code is a bug farm and three terms are a page of verifiable math |
 | Earth third body | point mass, fixed at −x (circular) | toggleable; with it on, the system is the perturbed CR3BP |
-| Sun third body | point mass, circular, sweeps at synodic rate | implemented in phase 1 for later use, but **off during family generation** (keeps the system autonomous); "Sun-on" propagation experiments are phase 2 |
+| Sun third body | (phase 2) point mass, circular, sweeps at synodic rate | deferred with the live-propagation experiments that need it; families are always generated Sun-off (autonomous system), so phase 1 never uses it |
 
 Constants (GM values, R_moon, GRGM-derived J2/C22/J3, Earth-Moon distance) live
 in one module with sources cited in comments.
 
-Out of scope for phase 1: SRP, ER3BP (elliptic Earth-Moon), degree-N GRAIL field,
-ephemeris, live propagation, averaged theory, quasi-periodic (non-resonant)
-families, constellation/coverage/DOP features.
+Out of scope for phase 1: Sun third body, SRP, ER3BP (elliptic Earth-Moon),
+degree-N GRAIL field, ephemeris, live propagation, averaged theory,
+quasi-periodic (non-resonant) families, ground-track and Earth-visibility views,
+constellation/coverage/DOP features.
 
 ## Catalog generation (`elfo-core` + `elfo-catalog`)
 
@@ -128,8 +136,8 @@ Every file carries `schema_version`.
 
 **Conventions:** Moon-centered rotating frame; +x Earth→Moon (Earth at −x), +z
 along Earth-Moon orbital angular momentum. Mean sub-Earth point at lon 0° on the
-−x axis ⇒ ground track = `lat = asin(z/r)`, `lon = atan2(y,x) − 180°`. Units km,
-km/s, s.
+−x axis ⇒ ground tracks (phase 2) will fall out as `lat = asin(z/r)`,
+`lon = atan2(y,x) − 180°`. Units km, km/s, s.
 
 - **`catalog.json`** (~tens of KB): generation provenance (date, git hash,
   constants + sources); combo list (id, name, active terms); per combo, families
@@ -163,9 +171,9 @@ Layout (approved):
 | family |     (Moon, family stack,  |
 | member |      animated member)     |
 | slider |                           |
-+--------+------------+--------------+
-| stability vs member | ground track |
-+---------------------+--------------+
++--------+---------------------------+
+|    stability indices vs member     |
++------------------------------------+
 ```
 
 - **3D stage:** true-scale textured Moon (LRO albedo), lat/lon grid toggle,
@@ -183,10 +191,9 @@ Layout (approved):
   freeze current orbit as a grey ghost, then toggle — deformation is visible by
   comparison. A family absent from a combo is reported plainly ("no frozen N=59
   family without Earth") — absence is a sensitivity result.
-- **Bottom strip:** stability indices vs member (log above |ν| = 1, boundary
-  marked, cursor at current member, clickable/scrubbable as an alternate
-  slider); ground track on equirectangular map drawn progressively during
-  animation with full track ghosted, plus a south-pole azimuthal view button.
+- **Bottom strip:** stability indices vs member for the current family, full
+  width (log above |ν| = 1, boundary marked, cursor at current member,
+  clickable/scrubbable as an alternate slider).
 - **Data loading:** boot from `catalog.json`; fetch member trajectories on
   selection with neighbor prefetch for smooth scrubbing.
 
@@ -210,14 +217,16 @@ tolerance (and stored), periapsis above surface, smooth progression of
 period/elements/indices along family (discontinuity ⇒ suspected branch jump ⇒
 flagged).
 
-Web: pure logic (binary parsing, transforms, ground-track math, interpolation,
-nearest-member matching) extracted and unit-tested; three.js rendering verified
-by eye.
+Web: pure logic (binary parsing, transforms, interpolation, nearest-member
+matching) extracted and unit-tested; three.js rendering verified by eye.
 
 ## Roadmap (post-phase-1 candidates, not committed)
 
-- **Phase 2:** WASM live propagation ("watch it fall apart"; Sun-on experiments —
-  synodic commensurability becomes physical); generic degree-N harmonics with
+- **Phase 2:** lunar ground-track panel (equirectangular + south-pole azimuthal
+  views; client-side from stored trajectories) and Earth-visibility overlay
+  (occultation coloring on the orbit curve); Sun third body + WASM live
+  propagation ("watch it fall apart"; Sun-on experiments — synodic
+  commensurability becomes physical); generic degree-N harmonics with
   truncation; averaged-theory map layer (e–ω portraits, continuous families);
   SRP; ER3BP.
 - **Phase 3:** constellation layer — K members + phasing → south-pole coverage
