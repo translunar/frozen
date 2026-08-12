@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { makeMember } from '../testFixtures';
 import {
-  energyLegendLabel, formatEnergyOffset, indexFromX, linearDomain, log10Domain, log10TickLabel,
-  memberIndexFromEnergy, metricCursorText, singleMetricValue, symlogDomain,
+  energyLegendLabel, energyTickCount, formatEnergyOffset, indexFromX, linearDomain, log10Domain,
+  log10TickLabel, memberIndexFromEnergy, metricCursorText, singleMetricValue, symlogDomain,
 } from './stabilityPlot';
 
 describe('symlogDomain', () => {
@@ -138,5 +138,17 @@ describe('energyLegendLabel', () => {
 
   it('formats a positive E0 with no leading sign', () => {
     expect(energyLegendLabel(0.318592767741606)).toBe('E₀ = 0.31859');
+  });
+});
+
+describe('energyTickCount', () => {
+  it('thins to 2 ticks when the pane is narrower than ~380px', () => {
+    expect(energyTickCount(379)).toBe(2);
+    expect(energyTickCount(200)).toBe(2);
+  });
+
+  it('stays at 4 ticks at 380px and wider', () => {
+    expect(energyTickCount(380)).toBe(4);
+    expect(energyTickCount(800)).toBe(4);
   });
 });

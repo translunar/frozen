@@ -97,6 +97,12 @@ export function energyLegendLabel(e0: number): string {
   return `E₀ = ${sign}${Math.abs(e0).toFixed(5)}`;
 }
 
+/** Energy-axis tick count: thins from 4 to 2 when the pane is too narrow to fit four labels
+ * without overlap (the three-pane always-visible layout can leave this strip quite narrow). */
+export function energyTickCount(width: number): number {
+  return width < 380 ? 2 : 4;
+}
+
 export type MetricKey = 'winding' | 'margin' | 'raw' | 'peri' | 'apo' | 'ecc' | 'inc';
 export type SingleMetricKey = Exclude<MetricKey, 'raw'>;
 
@@ -169,7 +175,14 @@ export interface StabilityPlot {
   refresh(): void;
 }
 
-export function mountStabilityPlot(container: HTMLElement, store: Store): StabilityPlot {
+/**
+ * `headerAside`, when given, is an external slot (the pane header's right-aligned area in the
+ * bottom three-pane layout) to host the metric `<select>` instead of floating it over the SVG.
+ * Falls back to appending inside `container` so the plot stays usable when mounted standalone.
+ */
+export function mountStabilityPlot(
+  container: HTMLElement, store: Store, headerAside?: HTMLElement,
+): StabilityPlot {
   container.innerHTML = '';
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', 'stability-svg');
@@ -183,7 +196,7 @@ export function mountStabilityPlot(container: HTMLElement, store: Store): Stabil
     o.textContent = opt.label;
     select.appendChild(o);
   }
-  container.appendChild(select);
+  (headerAside ?? container).appendChild(select);
 
   let family: Family | null = null;
   let terms: Terms | null = null;
@@ -286,7 +299,7 @@ export function mountStabilityPlot(container: HTMLElement, store: Store): Stabil
     svg.innerHTML = '';
     if (!family || !terms) return;
     const w = container.clientWidth || 800;
-    const h = container.clientHeight || 210;
+    const h = container.clientHeight || 230;
     const iw = innerWidth();
     const ih = Math.max(10, h - MARGIN.top - MARGIN.bottom);
     svg.setAttribute('width', String(w));
@@ -319,7 +332,7 @@ export function mountStabilityPlot(container: HTMLElement, store: Store): Stabil
       'energy (nondim)',
     ));
     const e0 = Math.min(...energies);
-    for (const t of x.ticks(4)) {
+    for (const t of x.ticks(energyTickCount(w))) {
       svg.appendChild(text(
         { x: String(x(t)), y: String(h - 20), class: 'tick', 'text-anchor': 'middle' },
         formatEnergyOffset(t - e0),

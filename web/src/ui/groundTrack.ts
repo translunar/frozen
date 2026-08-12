@@ -53,6 +53,12 @@ export function splitAtWraps<T extends LatLon>(points: T[]): T[][] {
   return out;
 }
 
+/** Graticule spacing in degrees: thins from 30° to 60° when the pane is too narrow for the
+ * denser grid to stay readable (the three-pane always-visible layout can be quite narrow). */
+export function graticuleStepDeg(width: number): number {
+  return width < 380 ? 60 : 30;
+}
+
 /** Latitude axis domain: the track's lat range padded ±10°, clamped to the physical ±90°. */
 export function latDomain(points: LatLon[]): [number, number] {
   if (points.length === 0) return [-90, 90];
@@ -132,7 +138,7 @@ export function mountMoonTrackPanel(container: HTMLElement): MoonTrackPanel {
     xScale = null;
     yScale = null;
     const w = container.clientWidth || 800;
-    const h = container.clientHeight || 210;
+    const h = container.clientHeight || 230;
     svg.setAttribute('width', String(w));
     svg.setAttribute('height', String(h));
     svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
@@ -146,13 +152,14 @@ export function mountMoonTrackPanel(container: HTMLElement): MoonTrackPanel {
     xScale = x;
     yScale = y;
 
-    for (let lon = -180; lon <= 180; lon += 30) {
+    const step = graticuleStepDeg(w);
+    for (let lon = -180; lon <= 180; lon += step) {
       svg.appendChild(el('line', {
         x1: String(x(lon)), x2: String(x(lon)), y1: String(MARGIN.top), y2: String(MARGIN.top + ih),
         class: 'grat',
       }));
     }
-    for (let lat = Math.ceil(latLo / 30) * 30; lat <= latHi; lat += 30) {
+    for (let lat = Math.ceil(latLo / step) * step; lat <= latHi; lat += step) {
       svg.appendChild(el('line', {
         x1: String(MARGIN.left), x2: String(MARGIN.left + iw), y1: String(y(lat)), y2: String(y(lat)),
         class: 'grat',

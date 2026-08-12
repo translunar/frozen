@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groundTrack, latDomain, splitAtWraps } from './groundTrack';
+import { graticuleStepDeg, groundTrack, latDomain, splitAtWraps } from './groundTrack';
 
 describe('groundTrack', () => {
   it('reads lat 90 at the pole and lat/lon 0 at the sub-Earth point', () => {
@@ -60,5 +60,17 @@ describe('latDomain', () => {
 
   it('falls back to ±90 for an empty track', () => {
     expect(latDomain([])).toEqual([-90, 90]);
+  });
+});
+
+describe('graticuleStepDeg', () => {
+  it('thins to 60° when the pane is narrower than ~380px', () => {
+    expect(graticuleStepDeg(379)).toBe(60);
+    expect(graticuleStepDeg(200)).toBe(60);
+  });
+
+  it('stays at 30° at 380px and wider', () => {
+    expect(graticuleStepDeg(380)).toBe(30);
+    expect(graticuleStepDeg(800)).toBe(30);
   });
 });
