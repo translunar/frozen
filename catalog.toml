@@ -1,5 +1,5 @@
-members_per_direction = 20
-ds0 = 5e-4
+members_per_direction = 40
+ds0 = 2e-2
 resonances = [18, 20, 22, 25, 27, 30, 35, 40, 45, 50, 55, 60, 70]
 
 [[combos]]
