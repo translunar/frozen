@@ -29,6 +29,53 @@ shorter continuations, for the `full` combo only.
 
 ## Getting started
 
+Nothing renders until `web/public/catalog/` exists — generated catalog data is
+git-ignored, so it never ships with a clone and must come from somewhere on every
+fresh checkout. There are two ways to get it: fetch a prebuilt tarball from GitHub
+Releases (fast, no Rust toolchain), or generate it locally from source (slower,
+fully reproducible). Release tags encode the generator commit that produced them
+(e.g. `catalog-<shortsha>`), so a prebuilt catalog's provenance always traces back
+to an exact source revision.
+
+`web/public/moon.jpg` (the Moon texture) ships in the repo and needs no extra step
+in either path — only the generated catalog is git-ignored.
+
+### Quick start (prebuilt catalog)
+
+No Rust toolchain needed for this path.
+
+Prerequisites:
+
+- Node 20+
+
+Steps, from a fresh clone of `git@github.com:translunar/frozen.git`:
+
+```bash
+git clone git@github.com:translunar/frozen.git
+cd frozen
+
+cd web
+npm install
+cd ..
+
+scripts/fetch-catalog.sh   # downloads the latest release's catalog.tar.gz to
+                            # web/public/catalog/
+
+cd web
+npm run dev
+```
+
+Open <http://localhost:5173>.
+
+`scripts/fetch-catalog.sh` also takes a release tag as its first argument
+(`scripts/fetch-catalog.sh catalog-<shortsha>`) to pin a specific catalog instead
+of whatever `latest` currently points to.
+
+### Build the catalog from source (reproducible path)
+
+Use this path when changing the physics or the catalog config, or to verify a
+release tarball reproduces from its source commit.
+
 Prerequisites:
 
 - Rust (stable toolchain, via [rustup](https://rustup.rs))
@@ -43,10 +90,7 @@ Steps, from a fresh clone of `git@github.com:translunar/frozen.git`:
    cd frozen
    ```
 
-2. Generate a catalog. Nothing renders until this step has produced
-   `web/public/catalog/` — generated catalog data is git-ignored, so it does not
-   ship with the clone and must be generated locally every time you check the repo
-   out fresh. Two options:
+2. Generate a catalog. Two options:
 
    ```bash
    # Dev config: small, fast, good enough for a quick look (~1 minute).
@@ -65,9 +109,6 @@ Steps, from a fresh clone of `git@github.com:translunar/frozen.git`:
    ```
 
 4. Open <http://localhost:5173>.
-
-`web/public/moon.jpg` (the Moon texture) ships in the repo and needs no extra
-step — only the generated catalog is git-ignored.
 
 ## Using the cockpit
 
