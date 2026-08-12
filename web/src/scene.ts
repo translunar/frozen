@@ -102,9 +102,17 @@ export function createStage(container: HTMLElement): Stage {
   renderer.setPixelRatio(window.devicePixelRatio);
   container.appendChild(renderer.domElement);
 
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
+  // OrbitControls bakes camera.up into its internal orbit-axis quaternion once, in its
+  // constructor, and never resyncs it — so switching presets that change camera.up (south-pole
+  // uses +x; everything else uses +z) leaves drag-orbit rotating about a stale axis unless the
+  // controls are rebuilt whenever `up` changes. See applyPreset below.
+  function makeControls(): OrbitControls {
+    const c = new OrbitControls(camera, renderer.domElement);
+    c.enableDamping = true;
+    c.dampingFactor = 0.08;
+    return c;
+  }
+  let controls = makeControls();
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.4));
   const key = new THREE.DirectionalLight(0xffffff, 2.0);
@@ -206,6 +214,10 @@ export function createStage(container: HTMLElement): Stage {
       const pose = presetCamera(name, frameDist);
       camera.up.set(pose.up[0], pose.up[1], pose.up[2]);
       camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
+      // Rebuild controls so their cached orbit-axis quaternion matches the new camera.up.
+      controls.dispose();
+      controls = makeControls();
+      stage.controls = controls;
       controls.target.set(0, 0, 0);
       controls.update();
     },
