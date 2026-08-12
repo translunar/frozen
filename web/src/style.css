@@ -61,6 +61,7 @@ html, body {
 .family-btn.active { background: #1d2b3f; color: #ffc24a; border-color: #3d5271; }
 .family-btn-main   { display: block; }
 .family-btn-sub    { display: block; font-size: 10px; color: #6f8299; margin-top: 2px; }
+.family-btn-dual   { display: block; font-size: 10px; color: #6f8299; margin-top: 1px; }
 
 #member-slider { width: 100%; }
 .endpoints {

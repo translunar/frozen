@@ -17,12 +17,13 @@ export function makeMember(index: number, over: Partial<Member> = {}): Member {
   };
 }
 
-export function makeFamily(n: number, count: number): Family {
+export function makeFamily(n: number, count: number, over: Partial<Family> = {}): Family {
   return {
     resonance_n: n,
     members: Array.from({ length: count }, (_, i) => makeMember(i, { traj: `full/n${n}/${i}.f32` })),
     preview: `full/n${n}/preview.f32`,
     preview_counts: Array.from({ length: count }, () => 1000),
+    ...over,
   };
 }
 

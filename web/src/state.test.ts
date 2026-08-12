@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   comboById, createStore, elapsedRevs, familyByN,
-  librationPeriodMonths, nearestMemberIndex, samplePosition, stabilityMargin, symlog,
+  librationPeriodMonths, nearestMemberIndex, nearestRational, resonanceBadge,
+  samplePosition, sidRevsPerClosure, stabilityMargin, symlog, synodicRevs,
   trailingWindowIndices, windingAngleDeg,
 } from './state';
 import type { AppState } from './state';
@@ -138,6 +139,75 @@ describe('elapsedRevs', () => {
   it('counts revs as the resonance number scaled by period fraction', () => {
     expect(elapsedRevs(1180295.5, 2360591, 25)).toBeCloseTo(12.5, 9);
     expect(elapsedRevs(0, 2360591, 25)).toBe(0);
+  });
+});
+
+const SYNODIC_MONTH_S = 2_551_442.9;
+
+describe('sidRevsPerClosure', () => {
+  it('divides total revs by the closure count (74.5 for a 149:2 family)', () => {
+    expect(sidRevsPerClosure(149, 2)).toBeCloseTo(74.5, 12);
+    expect(sidRevsPerClosure(25, 1)).toBe(25);
+  });
+
+  it('is 0 for a degenerate (non-positive) closure count', () => {
+    expect(sidRevsPerClosure(149, 0)).toBe(0);
+  });
+});
+
+describe('synodicRevs', () => {
+  it('scales revs by the ratio of the synodic month to the full closure period', () => {
+    // 149 revs over a period of exactly one synodic month -> 149 rev/syn-mo.
+    expect(synodicRevs(149, SYNODIC_MONTH_S)).toBeCloseTo(149, 9);
+    // Half as long a period -> twice as many synodic months fit -> half the revs each.
+    expect(synodicRevs(149, SYNODIC_MONTH_S / 2)).toBeCloseTo(298, 9);
+  });
+
+  it('is 0 for a degenerate (non-positive) period', () => {
+    expect(synodicRevs(149, 0)).toBe(0);
+  });
+});
+
+describe('nearestRational', () => {
+  it('hand-checks exact and near-exact hits', () => {
+    expect(nearestRational(80.5, 4)).toEqual({ p: 161, q: 2, err: 0 });
+    expect(nearestRational(0.75, 4)).toEqual({ p: 3, q: 4, err: 0 });
+  });
+
+  it('picks the closest denominator by raw error, hand-checked against 54.64', () => {
+    // q=1: |54.64-55|=0.36; q=2: |54.64-54.5|=0.14; q=3: |54.64-164/3|=0.0267 (best);
+    // q=4: |54.64-54.75|=0.11.
+    const fit = nearestRational(54.64, 4);
+    expect(fit).toEqual({ p: 164, q: 3, err: expect.closeTo(0.026667, 5) });
+  });
+
+  it('is forced to q=1 when maxDen is 1', () => {
+    expect(nearestRational(74.5, 1)).toEqual({ p: 75, q: 1, err: 0.5 });
+  });
+});
+
+describe('resonanceBadge', () => {
+  it('formats a passing-gate badge with the residual in degrees, hand-checked to 149:2', () => {
+    // Construct a period so that 149 revs land at exactly 80.5 + 3/720 synodic months —
+    // engineered so nearestRational(x, 4) lands on 161:2 with a residual of exactly 3 deg:
+    // err = |x - 80.5| = 3/720, residual = err * q(=2) * 360 = 3.
+    const x = 80.5 + 3 / 720;
+    const periodS = (149 * SYNODIC_MONTH_S) / x;
+    expect(sidRevsPerClosure(149, 2)).toBeCloseTo(74.5, 9);
+    expect(synodicRevs(149, periodS)).toBeCloseTo(x, 6);
+    expect(resonanceBadge(synodicRevs(149, periodS))).toBe('≈161:2 syn (3°)');
+  });
+
+  it('rejects the folklore case (x=54.64 claimed as 109:2): residual is 100deg+', () => {
+    expect(resonanceBadge(54.64)).toBe('');
+  });
+
+  it('rejects when the best-fit residual still exceeds the gate', () => {
+    expect(resonanceBadge(80.5 + 3 / 720, 4, 2)).toBe(''); // 3deg residual > 2deg gate
+  });
+
+  it('accepts an exact hit with a 0deg residual', () => {
+    expect(resonanceBadge(74.5, 4)).toBe('≈149:2 syn (0°)');
   });
 });
 

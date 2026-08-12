@@ -9,6 +9,7 @@ import {
 import { mountBottomPanel } from './ui/bottomTabs';
 import { mountLeftRail } from './ui/leftRail';
 import { mountOrbitOverlay } from './ui/overlay';
+import { familyClosures } from './types';
 import type { Combo, Family, Terms } from './types';
 
 const CATALOG_BASE = 'catalog';
@@ -119,7 +120,7 @@ async function boot(): Promise<void> {
     stage.setSelected(traj);
     satellite.setMember(traj, member.period_s, family.resonance_n);
     bottom.setMember(traj, member, family.resonance_n);
-    overlay.setSelected(member, family.resonance_n);
+    overlay.setSelected(member, family.resonance_n, familyClosures(family));
     prefetchNeighbors(CATALOG_BASE, family, idx);
   }
 
@@ -138,7 +139,7 @@ async function boot(): Promise<void> {
     const family = combo ? familyByN(combo, g.familyN) : undefined;
     const member = family?.members[g.memberIndex];
     stage.setGhost(member ? await memberTrajectory(CATALOG_BASE, member) : null);
-    overlay.setGhost(member ?? null, family ? family.resonance_n : null);
+    overlay.setGhost(member ?? null, family ? family.resonance_n : null, family ? familyClosures(family) : 1);
   }
 
   store.subscribe((s, p) => {

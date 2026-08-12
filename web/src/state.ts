@@ -170,3 +170,48 @@ export function nearestResonance(combo: Combo, n: number): number | null {
   }
   return best.resonance_n;
 }
+
+const SYNODIC_MONTH_S = 2_551_442.9;
+
+/**
+ * Sidereal-ish revs per closure: an M:k family's closure period spans k node-regression
+ * periods, so each one gets M/k of the total M revs (74.5 for a 149:2 family).
+ */
+export function sidRevsPerClosure(revs: number, closures: number): number {
+  return closures > 0 ? revs / closures : 0;
+}
+
+/**
+ * Revs expressed in synodic months instead: `periodS` is the *full* k-closure period (not a
+ * single node-regression period), so this is revs per closure scaled by how many synodic
+ * months that whole closure spans.
+ */
+export function synodicRevs(revs: number, periodS: number): number {
+  return periodS > 0 ? revs * (SYNODIC_MONTH_S / periodS) : 0;
+}
+
+export interface RationalFit { p: number; q: number; err: number }
+
+/** Best p/q approximation of x with denominator q <= maxDen, by raw |x - p/q| (brute force). */
+export function nearestRational(x: number, maxDen: number): RationalFit {
+  let best: RationalFit = { p: Math.round(x), q: 1, err: Math.abs(x - Math.round(x)) };
+  for (let q = 2; q <= maxDen; q++) {
+    const p = Math.round(x * q);
+    const err = Math.abs(x - p / q);
+    if (err < best.err) best = { p, q, err };
+  }
+  return best;
+}
+
+/**
+ * Human-readable rational-resonance badge for a synodic-month rev count, e.g. `≈161:2 syn
+ * (3°)` — the residual is the orbit-phase error accumulated over q synodic months if x were
+ * exactly p/q, in degrees. Returns '' when that residual exceeds `gateDeg`: a "resonance"
+ * whose phase actually drifts by 100°+ per closure is folklore, not a real repeat.
+ */
+export function resonanceBadge(x: number, maxDen = 4, gateDeg = 20): string {
+  const { p, q, err } = nearestRational(x, maxDen);
+  const residualDeg = err * q * 360;
+  if (residualDeg > gateDeg) return '';
+  return `≈${p}:${q} syn (${Math.round(residualDeg)}°)`;
+}

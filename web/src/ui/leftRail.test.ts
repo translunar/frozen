@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  familyHpRangeKm, formatReadout, memberEndpointLabel, revHoursPerOrbit, TERM_LABELS,
+  familyDualClockLabel, familyHpRangeKm, familyMainLabel, familyReferenceTag, formatReadout,
+  memberEndpointLabel, revHoursPerOrbit, TERM_LABELS,
 } from './leftRail';
 import { makeFamily, makeMember } from '../testFixtures';
+
+const SYNODIC_MONTH_S = 2_551_442.9;
 
 describe('formatReadout', () => {
   it('renders every metadata field the readout card shows', () => {
@@ -19,6 +22,12 @@ describe('formatReadout', () => {
     expect(get('ν₂')).toBe('-0.400');
     expect(get('residual')).toBe('1.0e-11');
     expect(rows).toHaveLength(12);
+  });
+
+  it('shows "<M> over <k> closures" for the revs row of a k>1 rational-resonance family', () => {
+    const family = makeFamily(149, 1, { closures: 2 });
+    const rows = formatReadout(makeMember(0), family);
+    expect(rows.find((r) => r.label === 'revs')?.value).toBe('149 over 2 closures');
   });
 });
 
@@ -50,5 +59,58 @@ describe('familyHpRangeKm', () => {
 describe('TERM_LABELS', () => {
   it('covers all four toggleable force terms in a stable order', () => {
     expect(TERM_LABELS.map(([k]) => k)).toEqual(['j2', 'c22', 'j3', 'earth']);
+  });
+});
+
+describe('familyMainLabel', () => {
+  it('is unchanged for a k=1 (plain integer) family', () => {
+    expect(familyMainLabel(makeFamily(25, 4))).toBe('N = 25 · ~26 h/rev');
+  });
+
+  it('shows the per-closure rev count and the M:k pair for a k>1 family', () => {
+    // periodS engineered so periodS/3600/149 = 8.8 exactly.
+    const periodS = 149 * 8.8 * 3_600;
+    const family = makeFamily(149, 3, { closures: 2 });
+    family.members.forEach((m) => { m.period_s = periodS; });
+    expect(familyMainLabel(family)).toBe('N = 74.5 (149:2) · ~8.8 h/rev');
+  });
+});
+
+describe('familyDualClockLabel', () => {
+  it('is empty for a k=1 family — no second clock to show', () => {
+    expect(familyDualClockLabel(makeFamily(25, 4))).toBe('');
+  });
+
+  it('shows sid-closure and syn-mo revs with a badge when the gate passes', () => {
+    // Engineered (see state.test.ts resonanceBadge) so synodicRevs lands exactly 3 deg of
+    // residual off 161:2.
+    const x = 80.5 + 3 / 720;
+    const periodS = (149 * SYNODIC_MONTH_S) / x;
+    const family = makeFamily(149, 3, { closures: 2 });
+    family.members.forEach((m) => { m.period_s = periodS; });
+    expect(familyDualClockLabel(family)).toBe('74.5 rev/sid-closure · 80.5 rev/syn-mo ≈161:2 syn (3°)');
+  });
+
+  it('omits the badge when the residual fails the gate', () => {
+    // periodS chosen so synodicRevs comes out far from any low-denominator rational.
+    const family = makeFamily(149, 3, { closures: 2 });
+    family.members.forEach((m) => { m.period_s = 149 * SYNODIC_MONTH_S / 54.64; });
+    const label = familyDualClockLabel(family);
+    expect(label).toContain('74.5 rev/sid-closure');
+    expect(label).not.toContain('≈');
+  });
+});
+
+describe('familyReferenceTag', () => {
+  it('flags a family whose mid-member a_km lands within an agency reference band', () => {
+    const family = makeFamily(30, 5);
+    family.members[2].elements.a_km = 11_315.9; // exact NASA LCRNS hit
+    expect(familyReferenceTag(family)).toBe('≈ NASA LCRNS band');
+  });
+
+  it('is empty when no reference is within tolerance', () => {
+    const family = makeFamily(30, 5);
+    family.members[2].elements.a_km = 50_000;
+    expect(familyReferenceTag(family)).toBe('');
   });
 });

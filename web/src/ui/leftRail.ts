@@ -1,9 +1,13 @@
 import { mountAnimControls } from '../anim';
 import type { AnimControls } from '../anim';
+import { nearestReference } from '../references';
 import { MOON_RADIUS_KM } from '../scene';
 import type { PresetName } from '../scene';
-import { comboById, familyByN, nearestMemberIndex } from '../state';
+import {
+  comboById, familyByN, nearestMemberIndex, resonanceBadge, sidRevsPerClosure, synodicRevs,
+} from '../state';
 import type { Store } from '../state';
+import { familyClosures } from '../types';
 import type { Catalog, Combo, Family, Member, Terms } from '../types';
 
 export const TERM_LABELS: Array<[keyof Terms, string]> = [
@@ -15,6 +19,10 @@ export const TERM_LABELS: Array<[keyof Terms, string]> = [
 
 export function formatReadout(member: Member, family: Family): Array<{ label: string; value: string }> {
   const e = member.elements;
+  const closures = familyClosures(family);
+  const revs = closures > 1
+    ? `${family.resonance_n} over ${closures} closures`
+    : `${family.resonance_n}`;
   return [
     { label: 'a', value: `${e.a_km.toFixed(0)} km` },
     { label: 'e', value: e.e.toFixed(4) },
@@ -22,7 +30,7 @@ export function formatReadout(member: Member, family: Family): Array<{ label: st
     { label: 'ω', value: `${e.omega_deg.toFixed(2)}°` },
     { label: 'Ω', value: `${e.raan_deg.toFixed(2)}°` },
     { label: 'period', value: `${(member.period_s / 86_400).toFixed(3)} d` },
-    { label: 'revs', value: `${family.resonance_n}` },
+    { label: 'revs', value: revs },
     { label: 'peri alt', value: `${(member.r_peri_km - MOON_RADIUS_KM).toFixed(0)} km` },
     { label: 'apo alt', value: `${(member.r_apo_km - MOON_RADIUS_KM).toFixed(0)} km` },
     { label: 'ν₁', value: member.nu1.toFixed(3) },
@@ -47,6 +55,55 @@ export function revHoursPerOrbit(family: Family): number {
 export function familyHpRangeKm(family: Family): [number, number] {
   const alts = family.members.map((m) => m.r_peri_km - MOON_RADIUS_KM);
   return [Math.round(Math.min(...alts)), Math.round(Math.max(...alts))];
+}
+
+/** Whole numbers print bare; anything else gets one decimal (74.5, not 74.50 or 74.5000001). */
+function formatRevs(x: number): string {
+  return Number.isInteger(x) ? String(x) : x.toFixed(1);
+}
+
+/**
+ * Family button headline. k=1 is unchanged (`N = 25 · ~26 h/rev`). k>1 (a rational M:k
+ * resonance) leads with the per-closure rev count instead of the raw M, with the M:k pair
+ * alongside it for precision: `N = 74.5 (149:2) · ~8.8 h/rev`.
+ */
+export function familyMainLabel(family: Family): string {
+  const closures = familyClosures(family);
+  if (closures <= 1) {
+    return `N = ${family.resonance_n} · ~${revHoursPerOrbit(family)} h/rev`;
+  }
+  const periodS = family.members[0]?.period_s ?? 0;
+  const hrPerRev = family.resonance_n > 0 ? periodS / 3_600 / family.resonance_n : 0;
+  const sid = sidRevsPerClosure(family.resonance_n, closures);
+  return `N = ${formatRevs(sid)} (${family.resonance_n}:${closures}) · ~${hrPerRev.toFixed(1)} h/rev`;
+}
+
+/**
+ * The dual-clock line shown under a k>1 family button: revs per closure alongside revs per
+ * synodic month, plus a nearby-rational badge (e.g. `≈161:2 syn (3°)`) when the residual
+ * passes `resonanceBadge`'s gate. '' for k=1 families — there's no second clock to show.
+ */
+export function familyDualClockLabel(family: Family): string {
+  const closures = familyClosures(family);
+  if (closures <= 1) return '';
+  const periodS = family.members[0]?.period_s ?? 0;
+  const sid = sidRevsPerClosure(family.resonance_n, closures);
+  const syn = synodicRevs(family.resonance_n, periodS);
+  const badge = resonanceBadge(syn);
+  const base = `${formatRevs(sid)} rev/sid-closure · ${syn.toFixed(1)} rev/syn-mo`;
+  return badge ? `${base} ${badge}` : base;
+}
+
+/**
+ * Tiny muted tag for a family whose mid-member semi-major axis lands within an agency
+ * reference orbit's band (default 3%), e.g. `≈ IM Khonstellation band`. '' when no reference
+ * is that close.
+ */
+export function familyReferenceTag(family: Family): string {
+  const mid = family.members[Math.floor(family.members.length / 2)];
+  if (!mid) return '';
+  const ref = nearestReference(mid.elements.a_km);
+  return ref ? `≈ ${ref.name} band` : '';
 }
 
 export interface LeftRailHooks {
@@ -175,12 +232,20 @@ export function mountLeftRail(
       btn.className = `family-btn${fam.resonance_n === from.resonance_n ? ' active' : ''}`;
       const main = document.createElement('span');
       main.className = 'family-btn-main';
-      main.textContent = `N = ${fam.resonance_n} · ~${revHoursPerOrbit(fam)} h/rev`;
+      main.textContent = familyMainLabel(fam);
       const [hpMin, hpMax] = familyHpRangeKm(fam);
+      const refTag = familyReferenceTag(fam);
       const sub = document.createElement('span');
       sub.className = 'family-btn-sub';
-      sub.textContent = `hp ${hpMin}–${hpMax} km`;
+      sub.textContent = refTag ? `hp ${hpMin}–${hpMax} km · ${refTag}` : `hp ${hpMin}–${hpMax} km`;
       btn.append(main, sub);
+      const dualClock = familyDualClockLabel(fam);
+      if (dualClock) {
+        const dual = document.createElement('span');
+        dual.className = 'family-btn-dual';
+        dual.textContent = dualClock;
+        btn.append(dual);
+      }
       btn.addEventListener('click', () => {
         const idx = nearestMemberIndex(store.get().memberIndex, from.members.length, fam.members.length);
         store.update({ familyN: fam.resonance_n, memberIndex: idx, animTime: 0 });

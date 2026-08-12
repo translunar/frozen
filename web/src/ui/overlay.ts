@@ -9,22 +9,24 @@ import type { Member } from '../types';
  * One compact line summarizing a member's orbit: `N=<n> · hp <km> · ha <km> · e <e> ·
  * i <deg>° (EM plane) · ω <deg>° · <h> h/rev`. hp/ha are altitudes above the Moon's mean
  * radius, rounded and thousands-separated; revolution hours divide the closure period
- * (which spans `resonanceN` revs) down to a single rev.
+ * (which spans `resonanceN` revs) down to a single rev. `closures` is k in an M:k rational
+ * resonance; when k > 1 the N label reads `N=<n>:<k>` instead of the bare integer.
  */
-export function overlayLine(member: Member, resonanceN: number): string {
+export function overlayLine(member: Member, resonanceN: number, closures = 1): string {
   const hp = Math.round(member.r_peri_km - MOON_RADIUS_KM).toLocaleString('en-US');
   const ha = Math.round(member.r_apo_km - MOON_RADIUS_KM).toLocaleString('en-US');
   const e = member.elements.e.toFixed(3);
   const i = member.elements.i_deg.toFixed(1);
   const omega = member.elements.omega_deg.toFixed(1);
   const revHours = (member.period_s / 3_600 / resonanceN).toFixed(1);
-  return `N=${resonanceN} · hp ${hp} km · ha ${ha} km · e ${e} · i ${i}° (EM plane) · ω ${omega}° · ${revHours} h/rev`;
+  const nLabel = closures > 1 ? `${resonanceN}:${closures}` : `${resonanceN}`;
+  return `N=${nLabel} · hp ${hp} km · ha ${ha} km · e ${e} · i ${i}° (EM plane) · ω ${omega}° · ${revHours} h/rev`;
 }
 
 export interface OrbitOverlay {
-  setSelected(member: Member, resonanceN: number): void;
+  setSelected(member: Member, resonanceN: number, closures?: number): void;
   /** Pass `null` for either argument to hide the ghost line (no ghost pinned, or a broken chain). */
-  setGhost(member: Member | null, resonanceN: number | null): void;
+  setGhost(member: Member | null, resonanceN: number | null, closures?: number): void;
 }
 
 export function mountOrbitOverlay(container: HTMLElement): OrbitOverlay {
@@ -38,12 +40,12 @@ export function mountOrbitOverlay(container: HTMLElement): OrbitOverlay {
   container.appendChild(card);
 
   return {
-    setSelected(member, resonanceN) {
-      selectedLine.textContent = overlayLine(member, resonanceN);
+    setSelected(member, resonanceN, closures = 1) {
+      selectedLine.textContent = overlayLine(member, resonanceN, closures);
     },
-    setGhost(member, resonanceN) {
+    setGhost(member, resonanceN, closures = 1) {
       if (member && resonanceN !== null) {
-        ghostLine.textContent = `ghost: ${overlayLine(member, resonanceN)}`;
+        ghostLine.textContent = `ghost: ${overlayLine(member, resonanceN, closures)}`;
         ghostLine.hidden = false;
       } else {
         ghostLine.hidden = true;
