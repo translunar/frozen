@@ -495,8 +495,15 @@ mod tests {
     /// not an M:k defect: the corrector's basin already fails at the high-N, low-a end
     /// of the sweep, and 111:2 lands squarely in that band. Fixing it is a corrector
     /// problem (line search, step control, seed refinement), not a resonance one.
+    ///
+    /// **Resolved by the seed-cache campaign**: sweeping the seed eccentricity
+    /// (rather than the E_FRACTION constant tuned at N=25) moves the seed into the
+    /// corrector's basin — 111:2 converges to 1.28e-14 from e = 0.710 (0.705 and
+    /// 0.715 both stall), and the converged state ships in `seeds/full/n111_2.json`.
+    /// From analytic seeds at the default eccentricity this test still stalls, which
+    /// remains worth pinning: it documents the basin edge the cache exists to cross.
     #[test]
-    #[ignore = "~2 min, and currently fails: the corrector's basin, not the M:k seed"]
+    #[ignore = "~2 min; stalls from the default analytic seed (see doc — conquered via e-sweep, seeds/full/n111_2.json)"]
     fn dual_resonance_corrector_smoke_111_2() {
         let fm = ForceModel { j2: true, c22: true, j3: true, earth: true };
         let t_seed = std::time::Instant::now();

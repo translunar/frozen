@@ -100,6 +100,12 @@ Steps, from a fresh clone of `git@github.com:translunar/frozen.git`:
    cargo run -p elfo-catalog --release -- gen --config catalog.toml --out web/public/catalog
    ```
 
+   The full sweep warm-starts from the committed seed cache in `seeds/` —
+   converged periodic orbits for every family, including several (N = 45, 50,
+   55, 70 and the M:2 dual-resonance families) that do *not* converge from the
+   analytic seeds alone. `seeds/*/absent.json` records families known not to
+   converge so regeneration skips them; set `ELFO_RETRY_ABSENT=1` to retry.
+
 3. Install dependencies and start the dev server:
 
    ```bash
