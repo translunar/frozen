@@ -4,8 +4,8 @@ import { formatReferenceOffset, referencesWithin } from '../references';
 import { MOON_RADIUS_KM } from '../scene';
 import type { PresetName } from '../scene';
 import {
-  comboById, familyByN, formatRevs, nearestMemberIndex, resonanceBadge, sidRevsPerClosure,
-  synodicRevs,
+  comboById, displayOrder, familyByN, formatRevs, nearestMemberIndexByRank, nearestRational,
+  resonanceBadge, sidRevsPerClosure, synodicRevs,
 } from '../state';
 import type { Store } from '../state';
 import { familyClosures } from '../types';
@@ -76,20 +76,48 @@ export function familyMainLabel(family: Family): string {
   return `N = ${formatRevs(sid)} (${family.resonance_n}:${closures}) · ~${hrPerRev.toFixed(1)} h/rev`;
 }
 
+const MAX_SYN_DEN = 4;
+const SIDEREAL_TITLE = 'sidereal closure = ground-track repeat period';
+const SYNODIC_TITLE = 'synodic month = Sun-Earth-Moon alignment period';
+
+export interface DualClockLines {
+  line1: string;
+  line1Title: string;
+  line2: string;
+  line2Title: string;
+}
+
 /**
- * The dual-clock line shown under every family button: revs per closure alongside revs per
- * synodic month, plus a nearby-rational badge (e.g. `≈161:2 syn (3°)`) when the residual
- * passes `resonanceBadge`'s gate. Universal across k=1 and k>1 — for k=1, sid-closure revs is
- * just the plain integer resonance_n (formatRevs prints it bare, no decimal).
+ * The two-line, plain-language dual-clock readout shown under every family button (k=1 and
+ * k>1 alike). Line 1 is the ground-track repeat, always concrete (a family always closes).
+ * Line 2 is the sun-geometry repeat, which may or may not exist within a low-denominator
+ * rational — `resonanceBadge`'s gate decides whether the nearest p:q fit is a real repeat or
+ * just where nearestRational happened to land. Both lines carry a `title` tooltip with the
+ * full precision (see formatReadout's `revs`/`syn revs` rows for the same numbers elsewhere)
+ * plus a one-phrase definition of the clock in question, for anyone who hovers wondering what
+ * "sidereal closure" or "synodic month" means here.
  */
-export function familyDualClockLabel(family: Family): string {
+export function familyDualClockLines(family: Family): DualClockLines {
   const closures = familyClosures(family);
   const periodS = family.members[0]?.period_s ?? 0;
   const sid = sidRevsPerClosure(family.resonance_n, closures);
   const syn = synodicRevs(family.resonance_n, periodS);
-  const badge = resonanceBadge(syn);
-  const base = `${formatRevs(sid)} rev/sid-closure · ${syn.toFixed(1)} rev/syn-mo`;
-  return badge ? `${base} ${badge}` : base;
+  const days = periodS / 86_400;
+
+  const line1 = `track repeats: ${family.resonance_n} orbits ≈ ${days.toFixed(1)} d`;
+  const line1Title = `${formatRevs(sid)} rev / sidereal closure · ${SIDEREAL_TITLE}`;
+
+  const { p, q, err } = nearestRational(syn, MAX_SYN_DEN);
+  const residualDeg = err * q * 360;
+  const gatePasses = resonanceBadge(syn, MAX_SYN_DEN) !== '';
+  const monthWord = q === 1 ? 'synodic month' : 'synodic months';
+  const line2 = gatePasses
+    ? `sun geometry repeats: ~${p} orbits ≈ ${q} ${monthWord} (${Math.round(residualDeg)}° drift)`
+    : `sun geometry: no repeat within ${MAX_SYN_DEN} months`;
+  const line2Title = `${syn.toFixed(2)} rev / synodic month · ${p}:${q} · residual `
+    + `${residualDeg.toFixed(1)}° · ${SYNODIC_TITLE}`;
+
+  return { line1, line1Title, line2, line2Title };
 }
 
 const REFERENCE_TAG_CAP = 3;
@@ -178,8 +206,13 @@ export function mountLeftRail(
   const notice = pick<HTMLParagraphElement>('#notice');
   const clearGhost = pick<HTMLButtonElement>('#clear-ghost');
 
+  // The slider walks *display rank* (periapsis-altitude-sorted), not the raw storage index —
+  // see displayOrder's docs. Its value is a rank; convert back to the true member index the
+  // store tracks via the current family's display order.
   slider.addEventListener('input', () => {
-    store.update({ memberIndex: Number(slider.value), animTime: 0 });
+    const order = displayOrder(currentFamily());
+    const rank = Number(slider.value);
+    store.update({ memberIndex: order[rank] ?? 0, animTime: 0 });
   });
   pick<HTMLButtonElement>('#pin-ghost').addEventListener('click', () => hooks.onPinGhost());
   clearGhost.addEventListener('click', () => hooks.onClearGhost());
@@ -244,15 +277,18 @@ export function mountLeftRail(
       sub.className = 'family-btn-sub';
       sub.textContent = refTag ? `hp ${hpMin}–${hpMax} km · ${refTag}` : `hp ${hpMin}–${hpMax} km`;
       btn.append(main, sub);
-      const dualClock = familyDualClockLabel(fam);
-      if (dualClock) {
-        const dual = document.createElement('span');
-        dual.className = 'family-btn-dual';
-        dual.textContent = dualClock;
-        btn.append(dual);
-      }
+      const lines = familyDualClockLines(fam);
+      const dual1 = document.createElement('span');
+      dual1.className = 'family-btn-dual';
+      dual1.textContent = lines.line1;
+      dual1.title = lines.line1Title;
+      const dual2 = document.createElement('span');
+      dual2.className = 'family-btn-dual';
+      dual2.textContent = lines.line2;
+      dual2.title = lines.line2Title;
+      btn.append(dual1, dual2);
       btn.addEventListener('click', () => {
-        const idx = nearestMemberIndex(store.get().memberIndex, from.members.length, fam.members.length);
+        const idx = nearestMemberIndexByRank(store.get().memberIndex, from, fam);
         store.update({ familyN: fam.resonance_n, memberIndex: idx, animTime: 0 });
       });
       list.appendChild(btn);
@@ -263,11 +299,13 @@ export function mountLeftRail(
     const family = currentFamily();
     const idx = Math.min(Math.max(0, store.get().memberIndex), family.members.length - 1);
     const member = family.members[idx];
+    const order = displayOrder(family);
+    const rank = Math.max(0, order.indexOf(idx));
 
     slider.max = String(family.members.length - 1);
-    slider.value = String(idx);
-    pick<HTMLElement>('#ep-lo').textContent = memberEndpointLabel(family.members[0]);
-    pick<HTMLElement>('#ep-hi').textContent = memberEndpointLabel(family.members[family.members.length - 1]);
+    slider.value = String(rank);
+    pick<HTMLElement>('#ep-lo').textContent = memberEndpointLabel(family.members[order[0]]);
+    pick<HTMLElement>('#ep-hi').textContent = memberEndpointLabel(family.members[order[order.length - 1]]);
 
     const dl = pick<HTMLElement>('#readout');
     dl.innerHTML = '';

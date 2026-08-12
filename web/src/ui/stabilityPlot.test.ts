@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { makeMember } from '../testFixtures';
+import { makeFamily, makeMember } from '../testFixtures';
+import type { Terms } from '../types';
 import {
-  energyLegendLabel, energyTickCount, formatEnergyOffset, indexFromX, linearDomain, log10Domain,
-  log10TickLabel, memberIndexFromEnergy, metricCursorText, singleMetricValue, symlogDomain,
+  energyLegendLabel, formatEnergyOffset, indexFromX, linearDomain, log10Domain,
+  log10TickLabel, memberIndexFromEnergy, metricCursorText, orientedOrder, singleMetricValue,
+  symlogDomain, xAxisValues, xTickCount,
 } from './stabilityPlot';
+
+const FULL_TERMS: Terms = { j2: true, c22: true, j3: true, earth: true };
 
 describe('symlogDomain', () => {
   it('always shows the ±1 stability boundary with headroom', () => {
@@ -141,14 +145,58 @@ describe('energyLegendLabel', () => {
   });
 });
 
-describe('energyTickCount', () => {
+describe('xTickCount', () => {
   it('thins to 2 ticks when the pane is narrower than ~380px', () => {
-    expect(energyTickCount(379)).toBe(2);
-    expect(energyTickCount(200)).toBe(2);
+    expect(xTickCount(379)).toBe(2);
+    expect(xTickCount(200)).toBe(2);
   });
 
   it('stays at 4 ticks at 380px and wider', () => {
-    expect(energyTickCount(380)).toBe(4);
-    expect(energyTickCount(800)).toBe(4);
+    expect(xTickCount(380)).toBe(4);
+    expect(xTickCount(800)).toBe(4);
+  });
+});
+
+describe('xAxisValues', () => {
+  it('reads hp/ha/eccentricity straight off each member, in raw (true-index) order', () => {
+    const family = makeFamily(25, 2);
+    family.members[0].r_peri_km = 2_400;
+    family.members[0].r_apo_km = 9_600;
+    family.members[0].elements.e = 0.6;
+    family.members[1].r_peri_km = 2_200;
+    family.members[1].r_apo_km = 9_800;
+    family.members[1].elements.e = 0.65;
+    const hp = xAxisValues(family, 'hp', FULL_TERMS);
+    const ha = xAxisValues(family, 'ha', FULL_TERMS);
+    hp.forEach((v, i) => expect(v).toBeCloseTo([662.6, 462.6][i], 9));
+    ha.forEach((v, i) => expect(v).toBeCloseTo([7862.6, 8062.6][i], 9));
+    expect(xAxisValues(family, 'ecc', FULL_TERMS)).toEqual([0.6, 0.65]);
+  });
+
+  it('computes energy via energyNd for the "energy" mode', () => {
+    const family = makeFamily(25, 1);
+    const values = xAxisValues(family, 'energy', FULL_TERMS);
+    expect(values).toHaveLength(1);
+    expect(Number.isFinite(values[0])).toBe(true);
+  });
+});
+
+describe('orientedOrder', () => {
+  it('leaves the order unchanged when values already ascend along it', () => {
+    const order = [2, 0, 1];
+    // Value at each order slot: values[2]=10, values[0]=20, values[1]=30 -> already ascending.
+    const values = [20, 30, 10];
+    expect(orientedOrder(order, values)).toBe(order); // same reference: no reversal needed
+  });
+
+  it('reverses the order when values descend along it', () => {
+    const order = [0, 1, 2];
+    const values = [30, 20, 10]; // descending along the given order
+    expect(orientedOrder(order, values)).toEqual([2, 1, 0]);
+  });
+
+  it('is a no-op for a 0- or 1-length order', () => {
+    expect(orientedOrder([], [])).toEqual([]);
+    expect(orientedOrder([0], [42])).toEqual([0]);
   });
 });

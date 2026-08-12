@@ -4,7 +4,7 @@ import { familyPreview, loadCatalog, memberTrajectory, prefetchNeighbors } from 
 import { createStage } from './scene';
 import {
   comboById, createStore, familyByN, findCombo, flipTerm,
-  nearestMemberIndex, nearestResonance, termAvailability,
+  nearestMemberIndexByRank, nearestResonance, termAvailability,
 } from './state';
 import { mountBottomPanel } from './ui/bottomTabs';
 import { mountLeftRail } from './ui/leftRail';
@@ -91,9 +91,7 @@ async function boot(): Promise<void> {
       rail.setNotice(`No frozen N=${wantN} family in ${target.name} — showing N=${n}`);
     }
 
-    const memberIndex = nearestMemberIndex(
-      store.get().memberIndex, fromFamily.members.length, toFamily.members.length,
-    );
+    const memberIndex = nearestMemberIndexByRank(store.get().memberIndex, fromFamily, toFamily);
     store.update({
       comboId: target.id,
       familyN: toFamily.resonance_n,

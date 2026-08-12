@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  familyDualClockLabel, familyHpRangeKm, familyMainLabel, familyReferenceTag, formatReadout,
+  familyDualClockLines, familyHpRangeKm, familyMainLabel, familyReferenceTag, formatReadout,
   memberEndpointLabel, revHoursPerOrbit, TERM_LABELS,
 } from './leftRail';
 import { makeFamily, makeMember } from '../testFixtures';
@@ -77,31 +77,48 @@ describe('familyMainLabel', () => {
   });
 });
 
-describe('familyDualClockLabel', () => {
-  it('renders for a k=1 (plain integer) family too — sid-closure revs prints as a bare integer', () => {
-    // revs=25, closures=1, period engineered so synodicRevs(25, periodS) ~= 28.3.
+describe('familyDualClockLines', () => {
+  it('k=1, no sun-geometry repeat within 4 months: plain-language lines + precise tooltips', () => {
+    // revs=25, closures=1, period engineered so synodicRevs(25, periodS) ~= 28.3 -> nearestRational
+    // lands on 85:3 with a 36 deg residual (> the 20 deg gate) — see state.test.ts resonanceBadge.
     const family = makeFamily(25, 3, { closures: 1 });
     family.members.forEach((m) => { m.period_s = 2_253_924.82; });
-    expect(familyDualClockLabel(family)).toBe('25 rev/sid-closure · 28.3 rev/syn-mo');
+    const lines = familyDualClockLines(family);
+    expect(lines.line1).toBe('track repeats: 25 orbits ≈ 26.1 d');
+    expect(lines.line1Title).toBe('25 rev / sidereal closure · sidereal closure = ground-track repeat period');
+    expect(lines.line2).toBe('sun geometry: no repeat within 4 months');
+    expect(lines.line2Title).toBe(
+      '28.30 rev / synodic month · 85:3 · residual 36.0° · synodic month = Sun-Earth-Moon alignment period',
+    );
   });
 
-  it('shows sid-closure and syn-mo revs with a badge when the gate passes', () => {
+  it('k>1, sun-geometry repeat passes the gate: plain-language lines + precise tooltips', () => {
     // Engineered (see state.test.ts resonanceBadge) so synodicRevs lands exactly 3 deg of
     // residual off 161:2.
     const x = 80.5 + 3 / 720;
     const periodS = (149 * SYNODIC_MONTH_S) / x;
     const family = makeFamily(149, 3, { closures: 2 });
     family.members.forEach((m) => { m.period_s = periodS; });
-    expect(familyDualClockLabel(family)).toBe('74.5 rev/sid-closure · 80.5 rev/syn-mo ≈161:2 syn (3°)');
+    const lines = familyDualClockLines(family);
+    expect(lines.line1).toBe('track repeats: 149 orbits ≈ 54.7 d');
+    expect(lines.line1Title).toBe('74.5 rev / sidereal closure · sidereal closure = ground-track repeat period');
+    expect(lines.line2).toBe('sun geometry repeats: ~161 orbits ≈ 2 synodic months (3° drift)');
+    expect(lines.line2Title).toBe(
+      '80.50 rev / synodic month · 161:2 · residual 3.0° · synodic month = Sun-Earth-Moon alignment period',
+    );
   });
 
-  it('omits the badge when the residual fails the gate', () => {
-    // periodS chosen so synodicRevs comes out far from any low-denominator rational.
-    const family = makeFamily(149, 3, { closures: 2 });
-    family.members.forEach((m) => { m.period_s = 149 * SYNODIC_MONTH_S / 54.64; });
-    const label = familyDualClockLabel(family);
-    expect(label).toContain('74.5 rev/sid-closure');
-    expect(label).not.toContain('≈');
+  it('pluralizes "synodic month" to singular when q=1', () => {
+    // revs=5, period engineered so synodicRevs(5, periodS) = 5.02 -> nearestRational lands on
+    // 5:1 with a 7.2 deg residual (passes the gate).
+    const family = makeFamily(5, 2, { closures: 1 });
+    family.members.forEach((m) => { m.period_s = (5 * SYNODIC_MONTH_S) / 5.02; });
+    const lines = familyDualClockLines(family);
+    expect(lines.line1).toBe('track repeats: 5 orbits ≈ 29.4 d');
+    expect(lines.line2).toBe('sun geometry repeats: ~5 orbits ≈ 1 synodic month (7° drift)');
+    expect(lines.line2Title).toBe(
+      '5.02 rev / synodic month · 5:1 · residual 7.2° · synodic month = Sun-Earth-Moon alignment period',
+    );
   });
 });
 

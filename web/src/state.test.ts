@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  comboById, createStore, elapsedRevs, energyNd, familyByN, formatRevs,
-  librationPeriodMonths, nearestMemberIndex, nearestRational, resonanceBadge,
-  samplePosition, sidRevsPerClosure, stabilityMargin, symlog, synodicRevs,
+  comboById, createStore, displayOrder, elapsedRevs, energyNd, familyByN, formatRevs,
+  librationPeriodMonths, nearestMemberIndex, nearestMemberIndexByRank, nearestRational,
+  resonanceBadge, samplePosition, sidRevsPerClosure, stabilityMargin, symlog, synodicRevs,
   trailingWindowIndices, windingAngleDeg,
 } from './state';
 import type { AppState } from './state';
-import { makeCatalog } from './testFixtures';
+import { makeCatalog, makeFamily } from './testFixtures';
 import type { Terms } from './types';
 
 const INITIAL: AppState = {
@@ -75,6 +75,69 @@ describe('nearestMemberIndex', () => {
     expect(nearestMemberIndex(5, 11, 21)).toBe(10);
     expect(nearestMemberIndex(3, 7, 1)).toBe(0);
     expect(nearestMemberIndex(3, 1, 9)).toBe(0);
+  });
+});
+
+describe('displayOrder', () => {
+  it('reorders member indices so periapsis altitude reads ascending', () => {
+    // A zigzagging continuation walk: r_peri_km goes 2400, 2200, 2600, 2300 across indices 0..3.
+    const family = makeFamily(25, 4);
+    family.members[0].r_peri_km = 2400;
+    family.members[1].r_peri_km = 2200;
+    family.members[2].r_peri_km = 2600;
+    family.members[3].r_peri_km = 2300;
+    // Ascending r_peri_km order: 2200(1), 2300(3), 2400(0), 2600(2).
+    expect(displayOrder(family)).toEqual([1, 3, 0, 2]);
+  });
+
+  it('breaks ties by index, keeping a stable result', () => {
+    const family = makeFamily(25, 3);
+    family.members[0].r_peri_km = 2400;
+    family.members[1].r_peri_km = 2400;
+    family.members[2].r_peri_km = 2200;
+    expect(displayOrder(family)).toEqual([2, 0, 1]);
+  });
+
+  it('is the identity permutation for an already-ascending family', () => {
+    const family = makeFamily(25, 3);
+    family.members[0].r_peri_km = 2200;
+    family.members[1].r_peri_km = 2400;
+    family.members[2].r_peri_km = 2600;
+    expect(displayOrder(family)).toEqual([0, 1, 2]);
+  });
+
+  it('handles a single-member family', () => {
+    expect(displayOrder(makeFamily(25, 1))).toEqual([0]);
+  });
+});
+
+describe('nearestMemberIndexByRank', () => {
+  it('carries a raw index over via its RANK in display order, not the raw index itself', () => {
+    // from: r_peri_km zigzags 2400,2200,2600,2300 -> order [1,3,0,2]; raw index 0 is rank 2.
+    const from = makeFamily(25, 4);
+    from.members[0].r_peri_km = 2400;
+    from.members[1].r_peri_km = 2200;
+    from.members[2].r_peri_km = 2600;
+    from.members[3].r_peri_km = 2300;
+    // to: already ascending, same length -> order [0,1,2,3]; rank 2 -> raw index 2.
+    const to = makeFamily(30, 4);
+    to.members[0].r_peri_km = 100;
+    to.members[1].r_peri_km = 200;
+    to.members[2].r_peri_km = 300;
+    to.members[3].r_peri_km = 400;
+    expect(nearestMemberIndexByRank(0, from, to)).toBe(2);
+  });
+
+  it('maps the family-minimum-hp member to the family-minimum-hp member across a length change', () => {
+    const from = makeFamily(25, 4); // ascending by construction (testFixtures default a_km, not hp)
+    from.members.forEach((m, i) => { m.r_peri_km = 2000 + i * 100; }); // ascending, order = identity
+    const to = makeFamily(30, 2);
+    to.members[0].r_peri_km = 500;
+    to.members[1].r_peri_km = 900;
+    // from index 0 (rank 0, the lowest hp) -> to rank 0 -> to's lowest-hp member, index 0.
+    expect(nearestMemberIndexByRank(0, from, to)).toBe(0);
+    // from index 3 (rank 3, the highest hp) -> to rank 1 -> to's highest-hp member, index 1.
+    expect(nearestMemberIndexByRank(3, from, to)).toBe(1);
   });
 });
 

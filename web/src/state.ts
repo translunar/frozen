@@ -130,6 +130,38 @@ export function nearestMemberIndex(fromIndex: number, fromLength: number, toLeng
 }
 
 /**
+ * A family's member INDICES (into `family.members`), reordered so periapsis altitude reads
+ * ascending. The catalog stores members in continuation-walk order, which near a
+ * near-degenerate step can zigzag — hp/e/energy all locally backtrack along the stored
+ * sequence. Every UI touchpoint that presents "a family's members" as an ordered sequence
+ * (the member slider, the metric strip's x-axis, cross-family carry-over) should walk this
+ * order instead of the raw array, so near-duplicate members sit adjacent and nothing
+ * backtracks. Ties (equal r_peri_km) keep their original index order for a stable result.
+ */
+export function displayOrder(family: Family): number[] {
+  return family.members
+    .map((_, i) => i)
+    .sort((a, b) => {
+      const diff = family.members[a].r_peri_km - family.members[b].r_peri_km;
+      return diff !== 0 ? diff : a - b;
+    });
+}
+
+/**
+ * Same fractional position along a family of a different length, but carried over in
+ * *display-rank* space (see `displayOrder`) rather than raw storage-index space — the
+ * catalog's near-degenerate walk order means a raw-index carry-over could land on a
+ * wildly different orbit shape than the one actually adjacent on screen.
+ */
+export function nearestMemberIndexByRank(fromIndex: number, fromFamily: Family, toFamily: Family): number {
+  const fromOrder = displayOrder(fromFamily);
+  const toOrder = displayOrder(toFamily);
+  const fromRank = Math.max(0, fromOrder.indexOf(fromIndex));
+  const toRank = nearestMemberIndex(fromRank, fromOrder.length, toOrder.length);
+  return toOrder[toRank] ?? 0;
+}
+
+/**
  * Position on a uniformly sampled closed trajectory. `traj` is xyz triples over exactly
  * one period with no repeated endpoint, so the last sample interpolates back to the first.
  */
