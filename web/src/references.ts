@@ -28,20 +28,37 @@ export const AGENCY_REFERENCES: AgencyReference[] = [
   { name: 'JAXA demo', a_km: 3_870, period_h: 6.0, note: '' },
 ];
 
+export interface ReferenceMatch {
+  reference: AgencyReference;
+  /** (aKm - reference.a_km) / reference.a_km, as a signed percent (already ×100). */
+  offsetPct: number;
+}
+
 /**
  * Every reference within `tolFrac` fractional distance of `aKm`, closest first. A band like
  * a≈6,100 km sits close to both ESA LCNS COM (6,000) and Stanford LNCSS (6,143) — callers that
- * only want the single closest match should not silently drop the other.
+ * only want the single closest match should not silently drop the other. Each match carries
+ * its signed offset so two same-neighborhood tags (e.g. two families both near ESA LCNS NAV,
+ * one a touch under and one a touch over) can be told apart.
  */
-export function referencesWithin(aKm: number, tolFrac = 0.04): AgencyReference[] {
+export function referencesWithin(aKm: number, tolFrac = 0.04): ReferenceMatch[] {
   return AGENCY_REFERENCES
-    .map((ref) => ({ ref, frac: Math.abs(aKm - ref.a_km) / ref.a_km }))
-    .filter(({ frac }) => frac <= tolFrac)
-    .sort((a, b) => a.frac - b.frac)
-    .map(({ ref }) => ref);
+    .map((reference) => {
+      const frac = (aKm - reference.a_km) / reference.a_km;
+      return { reference, absFrac: Math.abs(frac), offsetPct: frac * 100 };
+    })
+    .filter(({ absFrac }) => absFrac <= tolFrac)
+    .sort((a, b) => a.absFrac - b.absFrac)
+    .map(({ reference, offsetPct }) => ({ reference, offsetPct }));
 }
 
 /** The reference whose a_km is closest to `aKm`, if within `tolFrac` fractional distance. */
 export function nearestReference(aKm: number, tolFrac = 0.04): AgencyReference | null {
-  return referencesWithin(aKm, tolFrac)[0] ?? null;
+  return referencesWithin(aKm, tolFrac)[0]?.reference ?? null;
+}
+
+/** Signed percent offset, 1 decimal, explicit sign, unicode minus: `+3.1%`, `−1.9%`. */
+export function formatReferenceOffset(offsetPct: number): string {
+  const sign = offsetPct < 0 ? '−' : '+';
+  return `${sign}${Math.abs(offsetPct).toFixed(1)}%`;
 }

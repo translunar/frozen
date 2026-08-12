@@ -106,10 +106,10 @@ describe('familyDualClockLabel', () => {
 });
 
 describe('familyReferenceTag', () => {
-  it('flags a family whose mid-member a_km lands within an agency reference band', () => {
+  it('flags a family whose mid-member a_km lands within an agency reference band, with its signed offset', () => {
     const family = makeFamily(30, 5);
     family.members[2].elements.a_km = 11_315.9; // exact NASA LCRNS hit
-    expect(familyReferenceTag(family)).toBe('≈ NASA LCRNS band');
+    expect(familyReferenceTag(family)).toBe('≈ NASA LCRNS (+0.0%) band');
   });
 
   it('is empty when no reference is within tolerance', () => {
@@ -118,9 +118,21 @@ describe('familyReferenceTag', () => {
     expect(familyReferenceTag(family)).toBe('');
   });
 
-  it('comma-joins every crowded band, closest first, singular "band"', () => {
+  it('comma-joins every crowded band with its own offset, closest first, singular "band"', () => {
     const family = makeFamily(30, 5);
-    family.members[2].elements.a_km = 6_100; // Stanford LNCSS (0.70%) and ESA LCNS COM (1.67%)
-    expect(familyReferenceTag(family)).toBe('≈ Stanford LNCSS, ESA LCNS COM band');
+    family.members[2].elements.a_km = 6_100; // Stanford LNCSS (-0.7%) and ESA LCNS COM (+1.7%)
+    expect(familyReferenceTag(family)).toBe('≈ Stanford LNCSS (−0.7%), ESA LCNS COM (+1.7%) band');
+  });
+
+  it('distinguishes two families near the same reference from opposite sides', () => {
+    // N=25-style case: a_mid=10049.3 is +3.1% above ESA LCNS NAV (9750.7).
+    const above = makeFamily(25, 5);
+    above.members[2].elements.a_km = 10_049.3;
+    expect(familyReferenceTag(above)).toBe('≈ ESA LCNS NAV (+3.1%) band');
+
+    // N=27-style case: a_mid=9569.3 is -1.9% below the same reference.
+    const below = makeFamily(27, 5);
+    below.members[2].elements.a_km = 9_569.3;
+    expect(familyReferenceTag(below)).toBe('≈ ESA LCNS NAV (−1.9%) band');
   });
 });

@@ -1,6 +1,6 @@
 import { mountAnimControls } from '../anim';
 import type { AnimControls } from '../anim';
-import { referencesWithin } from '../references';
+import { formatReferenceOffset, referencesWithin } from '../references';
 import { MOON_RADIUS_KM } from '../scene';
 import type { PresetName } from '../scene';
 import {
@@ -96,15 +96,19 @@ const REFERENCE_TAG_CAP = 3;
 
 /**
  * Tiny muted tag for a family whose mid-member semi-major axis lands within one or more
- * agency reference orbits' bands (default tolerance), e.g. `≈ IM Khonstellation band` or, when
- * two bands crowd the same neighborhood, `≈ Stanford LNCSS, ESA LCNS COM band` (closest
- * first, capped at 3, singular "band" regardless of match count). '' when nothing is that close.
+ * agency reference orbits' bands (default tolerance), each annotated with its signed percent
+ * offset so two families near the same reference (one a touch under, one a touch over) don't
+ * render identical tags: `≈ ESA LCNS NAV (−1.9%) band`, or when two bands crowd the same
+ * neighborhood, `≈ Stanford LNCSS (−0.7%), ESA LCNS COM (+1.7%) band` (closest first, capped
+ * at 3, singular "band" regardless of match count). '' when nothing is that close.
  */
 export function familyReferenceTag(family: Family): string {
   const mid = family.members[Math.floor(family.members.length / 2)];
   if (!mid) return '';
   const matches = referencesWithin(mid.elements.a_km).slice(0, REFERENCE_TAG_CAP);
-  return matches.length > 0 ? `≈ ${matches.map((r) => r.name).join(', ')} band` : '';
+  if (matches.length === 0) return '';
+  const parts = matches.map((m) => `${m.reference.name} (${formatReferenceOffset(m.offsetPct)})`);
+  return `≈ ${parts.join(', ')} band`;
 }
 
 export interface LeftRailHooks {

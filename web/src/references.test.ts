@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { AGENCY_REFERENCES, nearestReference, referencesWithin } from './references';
+import {
+  AGENCY_REFERENCES, formatReferenceOffset, nearestReference, referencesWithin,
+} from './references';
 
 describe('AGENCY_REFERENCES', () => {
   it('covers all seven agency/proposal orbits', () => {
@@ -59,7 +61,7 @@ describe('referencesWithin', () => {
   it('returns every reference within tolerance, closest first', () => {
     // a≈6,100: Stanford LNCSS (6,143) is 0.70% away, ESA LCNS COM (6,000) is 1.67% away —
     // both within the default 4% tolerance, Stanford first.
-    const names = referencesWithin(6_100).map((r) => r.name);
+    const names = referencesWithin(6_100).map((m) => m.reference.name);
     expect(names).toEqual(['Stanford LNCSS', 'ESA LCNS COM']);
   });
 
@@ -68,16 +70,39 @@ describe('referencesWithin', () => {
   });
 
   it('is a single-element array for an isolated exact hit', () => {
-    expect(referencesWithin(11_315.9).map((r) => r.name)).toEqual(['NASA LCRNS']);
+    expect(referencesWithin(11_315.9).map((m) => m.reference.name)).toEqual(['NASA LCRNS']);
   });
 
   it('respects a custom tolFrac', () => {
     expect(referencesWithin(6_100, 0.005)).toEqual([]); // both bands out of a 0.5% tolerance
-    expect(referencesWithin(6_100, 0.02).map((r) => r.name)).toEqual(['Stanford LNCSS', 'ESA LCNS COM']);
+    expect(referencesWithin(6_100, 0.02).map((m) => m.reference.name))
+      .toEqual(['Stanford LNCSS', 'ESA LCNS COM']);
   });
 
-  it('nearestReference is just its first match', () => {
-    expect(nearestReference(6_100)).toEqual(referencesWithin(6_100)[0]);
+  it('carries a signed offsetPct per match: negative when aKm is below the reference', () => {
+    // Stanford LNCSS a_km=6143; 6100 is below it -> negative offset.
+    // ESA LCNS COM a_km=6000; 6100 is above it -> positive offset.
+    const [stanford, com] = referencesWithin(6_100);
+    expect(stanford.offsetPct).toBeCloseTo(-0.6999837, 5);
+    expect(com.offsetPct).toBeCloseTo(1.6666667, 5);
+  });
+
+  it('nearestReference is just the reference of its first match', () => {
+    expect(nearestReference(6_100)).toEqual(referencesWithin(6_100)[0].reference);
     expect(nearestReference(50_000)).toBeNull();
+  });
+});
+
+describe('formatReferenceOffset', () => {
+  it('formats a positive offset with an explicit + and 1 decimal', () => {
+    expect(formatReferenceOffset(3.0623)).toBe('+3.1%');
+  });
+
+  it('formats a negative offset with a unicode minus and 1 decimal', () => {
+    expect(formatReferenceOffset(-1.8604)).toBe('−1.9%');
+  });
+
+  it('is +0.0% (not -0.0%) at exactly zero offset', () => {
+    expect(formatReferenceOffset(0)).toBe('+0.0%');
   });
 });
