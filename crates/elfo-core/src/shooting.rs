@@ -80,8 +80,26 @@ pub fn correct(fm: &ForceModel, nodes: &[[f64;6]], period: f64, constraint: &Con
             let (nodes, period) = unpack(&u, m);
             return Ok(PeriodicOrbit { nodes, period, residual: rn, segment_stms: stms });
         }
-        let du = j.clone().svd(true, true).solve(&(-&r), 1e-11)
-            .map_err(|e| e.to_string())?;
+        // Relative, not absolute, singular-value cutoff. A periodic-orbit system is
+        // intrinsically rank-deficient: the family tangent is a genuine null
+        // direction, and the min-norm solve is only well posed if it is truncated.
+        // nalgebra's `eps` is an *absolute* threshold, but the scale of this system
+        // is set by the dynamics — σ_max runs from 1e2 to 9e3 across the ELFO
+        // resonances, driven by how close a node sits to periapsis — so no fixed
+        // number can separate the null mode from the real ones.
+        //
+        // Measured on the N=25 full-model ELFO with the old 1e-11: the corrector
+        // limps to |R| = 3.7e-8 and then stalls with σ_min = 1.674e-11 — barely
+        // *above* the cutoff, so the null mode is retained and the solve divides a
+        // noise-level residual projection by it, asking for a step of 2.1e-4 against
+        // a residual of 3.7e-8 (cond 4.7e14). Nothing the line search can accept.
+        //
+        // 1e-10·σ_max was chosen by sweep: it converges the ELFO seeds for N = 20…60
+        // and every pre-existing orbit, where 1e-8 over-truncates real modes (N ≥ 30
+        // stalls at ~1e-7) and 1e-11 is too tight again by N = 60.
+        let svd = j.clone().svd(true, true);
+        let eps = 1e-10 * svd.singular_values.max();
+        let du = svd.solve(&(-&r), eps).map_err(|e| e.to_string())?;
         let mut alpha = 1.0;
         let mut accepted = false;
         for _ in 0..7 {

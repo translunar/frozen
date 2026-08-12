@@ -4,5 +4,6 @@ pub mod elements;
 pub mod forces;
 pub mod integrator;
 pub mod lagrange;
+pub mod seeds;
 pub mod shooting;
 pub mod stability;
