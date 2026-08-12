@@ -2593,7 +2593,7 @@ html, body {
 
 #rail  { grid-area: rail;  overflow-y: auto; border-right: 1px solid #1b2331; }
 #stage { grid-area: stage; position: relative; min-width: 0; min-height: 0; }
-#stage canvas { display: block; }
+#stage canvas { display: block; width: 100%; height: 100%; } /* HiDPI: setSize(..., false) sets buffer attrs only */
 #plot  { grid-area: plot;  border-top: 1px solid #1b2331; }
 ```
 
@@ -3514,7 +3514,7 @@ html, body {
 
 #rail  { grid-area: rail;  overflow-y: auto; border-right: 1px solid #1b2331; }
 #stage { grid-area: stage; position: relative; min-width: 0; min-height: 0; }
-#stage canvas { display: block; }
+#stage canvas { display: block; width: 100%; height: 100%; } /* HiDPI: setSize(..., false) sets buffer attrs only */
 #plot  { grid-area: plot;  border-top: 1px solid #1b2331; position: relative; }
 
 .card { padding: 10px 12px; border-bottom: 1px solid #141b26; }
