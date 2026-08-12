@@ -1,4 +1,5 @@
 pub mod constants;
+pub mod continuation;
 pub mod elements;
 pub mod forces;
 pub mod integrator;
