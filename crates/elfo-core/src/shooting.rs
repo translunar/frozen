@@ -88,15 +88,20 @@ pub fn correct(fm: &ForceModel, nodes: &[[f64;6]], period: f64, constraint: &Con
         // resonances, driven by how close a node sits to periapsis — so no fixed
         // number can separate the null mode from the real ones.
         //
-        // Measured on the N=25 full-model ELFO with the old 1e-11: the corrector
-        // limps to |R| = 3.7e-8 and then stalls with σ_min = 1.674e-11 — barely
-        // *above* the cutoff, so the null mode is retained and the solve divides a
-        // noise-level residual projection by it, asking for a step of 2.1e-4 against
-        // a residual of 3.7e-8 (cond 4.7e14). Nothing the line search can accept.
+        // Measured on the N=25 full-model ELFO (m = 50) with the old absolute 1e-11:
+        // the corrector reaches |R| = 7.0e-10 and then stalls at 5.97e-10 — *above*
+        // the 1e-10 convergence tolerance, so the milestone simply fails. Modes
+        // between 1e-11 and ~1e-8 are retained against σ_max = 5.0e2, and the
+        // min-norm solve divides noise-level residual projections by them: it asks
+        // for a step of 1.0e-4 against a residual of 6.0e-10, a factor of 1.7e5.
+        // Nothing the line search can accept.
         //
-        // 1e-10·σ_max was chosen by sweep: it converges the ELFO seeds for N = 20…60
-        // and every pre-existing orbit, where 1e-8 over-truncates real modes (N ≥ 30
-        // stalls at ~1e-7) and 1e-11 is too tight again by N = 60.
+        // The constant was chosen by sweep over N ∈ {20, 25, 40} at 2 nodes/rev:
+        // 1e-8 over-truncates real modes (N = 40 stalls at 5.0e-9), while 1e-10,
+        // 1e-11 and 1e-12 all converge. 1e-10 sits in the middle of that working
+        // band. σ_max only ranges 4.3e2…6.9e2 across these families, so the exact
+        // constant is not delicate — what matters is that it scales with σ_max at
+        // all, since nothing fixed can separate the null mode from the real ones.
         let svd = j.clone().svd(true, true);
         let eps = 1e-10 * svd.singular_values.max();
         let du = svd.solve(&(-&r), eps).map_err(|e| e.to_string())?;
