@@ -1,0 +1,10 @@
+# Small catalog for web development: one combo, two resonances, 7 members each.
+# Generation takes roughly a minute. The real config is /catalog.toml (Task 15).
+members_per_direction = 3
+ds0 = 5e-4
+resonances = [25, 30]
+
+[[combos]]
+id = "full"
+name = "J2 + C22 + J3 + Earth"
+force_model = { j2 = true, c22 = true, j3 = true, earth = true }

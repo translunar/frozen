@@ -1,0 +1,40 @@
+:root {
+  color-scheme: light dark;
+  font: 16px/1.4 system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+#app {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  grid-template-rows: 1fr 240px;
+  grid-template-areas:
+    'rail stage'
+    'rail plot';
+  height: 100vh;
+}
+
+#rail {
+  grid-area: rail;
+  overflow-y: auto;
+  border-right: 1px solid rgba(128, 128, 128, 0.3);
+}
+
+#stage {
+  grid-area: stage;
+  position: relative;
+}
+
+#plot {
+  grid-area: plot;
+  border-top: 1px solid rgba(128, 128, 128, 0.3);
+}
