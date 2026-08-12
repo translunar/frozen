@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  comboById, createStore, elapsedRevs, familyByN,
+  comboById, createStore, elapsedRevs, energyNd, familyByN,
   librationPeriodMonths, nearestMemberIndex, nearestRational, resonanceBadge,
   samplePosition, sidRevsPerClosure, stabilityMargin, symlog, synodicRevs,
   trailingWindowIndices, windingAngleDeg,
 } from './state';
 import type { AppState } from './state';
 import { makeCatalog } from './testFixtures';
+import type { Terms } from './types';
 
 const INITIAL: AppState = {
   comboId: 'full', familyN: 25, memberIndex: 0,
@@ -208,6 +209,24 @@ describe('resonanceBadge', () => {
 
   it('accepts an exact hit with a 0deg residual', () => {
     expect(resonanceBadge(74.5, 4)).toBe('≈149:2 syn (0°)');
+  });
+});
+
+describe('energyNd', () => {
+  // Controller-computed ground truth: state0 [0.02, 0, 0.01, 0, -0.6, 0.3].
+  const STATE0 = [0.02, 0, 0.01, 0, -0.6, 0.3];
+  const FULL: Terms = { j2: true, c22: true, j3: true, earth: true };
+
+  it('matches the controller-computed value for the full force model', () => {
+    expect(energyNd(STATE0, FULL)).toBeCloseTo(-1.794706268957019, 12);
+  });
+
+  it('matches the controller-computed value with earth off', () => {
+    expect(energyNd(STATE0, { ...FULL, earth: false })).toBeCloseTo(-0.318592767741606, 12);
+  });
+
+  it('matches the controller-computed value with c22 off', () => {
+    expect(energyNd(STATE0, { ...FULL, c22: false })).toBeCloseTo(-1.794705074039040, 12);
   });
 });
 

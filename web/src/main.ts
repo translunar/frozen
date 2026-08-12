@@ -109,7 +109,7 @@ async function boot(): Promise<void> {
     const idx = Math.min(Math.max(0, store.get().memberIndex), family.members.length - 1);
     const member = family.members[idx];
 
-    bottom.setFamily(family);
+    bottom.setFamily(family, currentCombo().terms);
     stage.setFrameRadiusKm(member.r_apo_km);
     const [loops, traj] = await Promise.all([
       familyPreview(CATALOG_BASE, family),

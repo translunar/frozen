@@ -1,5 +1,5 @@
 import type { Store } from '../state';
-import type { Family, Member } from '../types';
+import type { Family, Member, Terms } from '../types';
 import { mountMoonTrackPanel } from './groundTrack';
 import { mountSkyViewPanel } from './skyView';
 import { mountStabilityPlot } from './stabilityPlot';
@@ -13,7 +13,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
 ];
 
 export interface BottomPanel {
-  setFamily(family: Family): void;
+  setFamily(family: Family, terms: Terms): void;
   setMember(traj: Float32Array | null, member: Member, resonanceN: number): void;
   setAnimTime(t: number): void;
   refresh(): void;
@@ -74,8 +74,8 @@ export function mountBottomPanel(container: HTMLElement, store: Store): BottomPa
   setActive(active);
 
   return {
-    setFamily(family) {
-      metrics.setFamily(family);
+    setFamily(family, terms) {
+      metrics.setFamily(family, terms);
     },
     setMember(traj, member, resonanceN) {
       moon.setMember(traj, member.period_s, resonanceN);

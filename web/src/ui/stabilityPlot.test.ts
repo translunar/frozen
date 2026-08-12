@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { makeMember } from '../testFixtures';
 import {
-  indexFromX, linearDomain, log10Domain, log10TickLabel,
-  metricCursorText, singleMetricValue, symlogDomain,
+  energyLegendLabel, formatEnergyOffset, indexFromX, linearDomain, log10Domain, log10TickLabel,
+  memberIndexFromEnergy, metricCursorText, singleMetricValue, symlogDomain,
 } from './stabilityPlot';
 
 describe('symlogDomain', () => {
@@ -89,5 +89,54 @@ describe('metricCursorText', () => {
     const m = makeMember(0, { r_peri_km: 2400, r_apo_km: 9600 });
     expect(metricCursorText('peri', m)).toBe('peri alt = 663 km');
     expect(metricCursorText('apo', m)).toBe('apo alt = 7863 km');
+  });
+});
+
+describe('memberIndexFromEnergy', () => {
+  it('picks the member whose energy is closest to the target', () => {
+    const energies = [-1.7950, -1.7947, -1.7940, -1.7930];
+    expect(memberIndexFromEnergy(energies, -1.7947)).toBe(1); // exact hit
+    expect(memberIndexFromEnergy(energies, -1.7938)).toBe(2); // closer to index 2 than 3
+    expect(memberIndexFromEnergy(energies, -2)).toBe(0);      // clamps to the nearest end
+    expect(memberIndexFromEnergy(energies, 0)).toBe(3);
+  });
+
+  it('keeps the earlier index on an exact tie', () => {
+    expect(memberIndexFromEnergy([1, 3], 2)).toBe(0);
+  });
+
+  it('is 0 for an empty energy list (degenerate guard)', () => {
+    expect(memberIndexFromEnergy([], 5)).toBe(0);
+  });
+
+  it('honestly follows a non-monotone (folded) energy sequence rather than assuming sorted input', () => {
+    // A fold: energies rise then fall across member order 0..3.
+    const energies = [-1.795, -1.793, -1.794, -1.796];
+    expect(memberIndexFromEnergy(energies, -1.7934)).toBe(1); // closer to -1.793 than -1.794
+    expect(memberIndexFromEnergy(energies, -1.7955)).toBe(3); // closer to -1.796 than -1.795
+  });
+});
+
+describe('formatEnergyOffset', () => {
+  it('formats a positive offset from E0 in engineering notation', () => {
+    expect(formatEnergyOffset(3.2e-4)).toBe('E₀ + 3.2e-4');
+  });
+
+  it('formats a negative offset with a unicode minus', () => {
+    expect(formatEnergyOffset(-1.1e-5)).toBe('E₀ − 1.1e-5');
+  });
+
+  it('is the bare E0 label at exactly zero offset', () => {
+    expect(formatEnergyOffset(0)).toBe('E₀');
+  });
+});
+
+describe('energyLegendLabel', () => {
+  it('formats a negative E0 to 5 decimals with a unicode minus', () => {
+    expect(energyLegendLabel(-1.794706268957019)).toBe('E₀ = −1.79471');
+  });
+
+  it('formats a positive E0 with no leading sign', () => {
+    expect(energyLegendLabel(0.318592767741606)).toBe('E₀ = 0.31859');
   });
 });

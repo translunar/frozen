@@ -1,5 +1,54 @@
 import type { Catalog, Combo, Family, Terms } from './types';
 
+const GM_EARTH_KM3_S2 = 398_600.435507;
+const GM_MOON_KM3_S2 = 4_902.800118;
+/** Mass parameter mu = GM_moon / (GM_earth + GM_moon) — standard CR3BP convention. */
+const MU = GM_MOON_KM3_S2 / (GM_EARTH_KM3_S2 + GM_MOON_KM3_S2);
+const MOON_RADIUS_ND = 1_737.4 / 384_400;
+const J2 = 2.0323e-4;
+const C22 = 2.2426e-5;
+const J3 = 8.46e-6;
+
+/**
+ * Jacobi-like energy of a nondim rotating-frame state, in the same force model as one
+ * catalog combo: E = |v|^2/2 - Omega_eff, where Omega_eff is the centrifugal + gravity +
+ * (gated) harmonic potential. State is Moon-centered ([x,y,z,vx,vy,vz]); Earth sits at
+ * (-1,0,0) in these coordinates when its term is active. `bx` re-centers the centrifugal
+ * term on the Earth-Moon barycenter when Earth's gravity is part of the model — otherwise
+ * the frame simply rotates about the Moon itself.
+ */
+export function energyNd(state0: number[], terms: Terms): number {
+  const [x, y, z, vx, vy, vz] = state0;
+  const muM = MU;
+  const muE = 1 - MU;
+  const bx = terms.earth ? -(1 - MU) : 0;
+  const R = MOON_RADIUS_ND;
+  const k2 = muM * J2 * R ** 2;
+  const k22 = muM * C22 * R ** 2;
+  const k3 = muM * J3 * R ** 3;
+
+  const r = Math.sqrt(x * x + y * y + z * z);
+  let omega = 0.5 * ((x - bx) ** 2 + y * y) + muM / r;
+
+  if (terms.earth) {
+    const dxE = x + 1;
+    const rE = Math.sqrt(dxE * dxE + y * y + z * z);
+    omega += muE / rE;
+  }
+  if (terms.j2) {
+    omega += (-1.5 * k2 * z ** 2) / r ** 5 + (0.5 * k2) / r ** 3;
+  }
+  if (terms.c22) {
+    omega += (3 * k22 * (x * x - y * y)) / r ** 5;
+  }
+  if (terms.j3) {
+    omega += (-2.5 * k3 * z ** 3) / r ** 7 + (1.5 * k3 * z) / r ** 5;
+  }
+
+  const v2 = vx * vx + vy * vy + vz * vz;
+  return 0.5 * v2 - omega;
+}
+
 export interface GhostPin {
   comboId: string;
   familyN: number;

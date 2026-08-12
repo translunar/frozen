@@ -103,6 +103,8 @@ html, body {
 .stability-svg .metric-dot  { fill: #ffc24a; opacity: 0.6; }
 .stability-svg .tick       { fill: #7b8a9d; font-size: 10px; }
 .stability-svg .legend     { fill: #5d6d80; font-size: 10px; }
+.stability-svg .legend-e0  { fill: #4a5768; font-size: 10px; }
+.stability-svg .axis-label { fill: #5d6d80; font-size: 10px; }
 
 .metric-select {
   position: absolute; top: 8px; right: 18px; z-index: 2;
