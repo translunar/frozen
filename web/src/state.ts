@@ -63,6 +63,14 @@ export interface AppState {
   playing: boolean;
   speed: number;      // simulated seconds per wall-clock second
   ghost: GhostPin | null;
+  // Metric-strip selections, promoted out of ui/stabilityPlot.ts's closure-local state so a
+  // redraw (or an HMR/page reload rehydrating from sessionStorage — see hydrateUIState) can't
+  // silently reset them: any component can read the authoritative current selection off the
+  // store instead of trusting a variable that only one closure happens to own. Loosely typed
+  // as `string` here (not MetricKey/XAxisKey) to avoid a ui/ -> state.ts dependency inversion;
+  // consumers validate against their own known option list and fall back to their own default.
+  metric: string;
+  xAxis: string;
 }
 
 export type Listener = (state: AppState, prev: AppState) => void;
@@ -300,4 +308,42 @@ export function resonanceBadge(x: number, maxDen = 4, gateDeg = 20): string {
   const residualDeg = err * q * 360;
   if (residualDeg > gateDeg) return '';
   return `≈${p}:${q} syn (${Math.round(residualDeg)}°)`;
+}
+
+/** The slice of AppState worth surviving a page reload / HMR — small enough to serialize
+ * wholesale, no ghost/animation/speed state (that's session-instant, not "context"). */
+export interface PersistedUIState {
+  comboId: string;
+  familyN: number;
+  memberIndex: number;
+  metric: string;
+  xAxis: string;
+}
+
+/**
+ * Parses a JSON blob (typically sessionStorage's last-written value) into a validated UI-state
+ * patch, falling back to `defaults` field-by-field for anything missing, malformed, or the
+ * wrong type. Never throws: corrupt JSON, a non-object payload, or a stale/foreign shape all
+ * just yield `defaults` back — a hydration bug should degrade to "start fresh", not crash boot.
+ */
+export function hydrateUIState(raw: string | null, defaults: PersistedUIState): PersistedUIState {
+  if (!raw) return defaults;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return defaults;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return defaults;
+  const p = parsed as Record<string, unknown>;
+  const str = (v: unknown, fallback: string): string => (typeof v === 'string' && v !== '' ? v : fallback);
+  const nonNegInt = (v: unknown, fallback: number): number =>
+    (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.round(v) : fallback);
+  return {
+    comboId: str(p.comboId, defaults.comboId),
+    familyN: typeof p.familyN === 'number' && Number.isFinite(p.familyN) ? p.familyN : defaults.familyN,
+    memberIndex: nonNegInt(p.memberIndex, defaults.memberIndex),
+    metric: str(p.metric, defaults.metric),
+    xAxis: str(p.xAxis, defaults.xAxis),
+  };
 }

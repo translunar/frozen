@@ -3,16 +3,39 @@ import { advanceTime, createLoop, createSatellite, SPEED_DEFAULT } from './anim'
 import { familyPreview, loadCatalog, memberTrajectory, prefetchNeighbors } from './data';
 import { createStage } from './scene';
 import {
-  comboById, createStore, familyByN, findCombo, flipTerm,
+  comboById, createStore, familyByN, findCombo, flipTerm, hydrateUIState,
   nearestMemberIndexByRank, nearestResonance, termAvailability,
 } from './state';
+import type { PersistedUIState } from './state';
 import { mountBottomPanel } from './ui/bottomTabs';
 import { mountLeftRail } from './ui/leftRail';
 import { mountOrbitOverlay } from './ui/overlay';
+import { DEFAULT_METRIC, DEFAULT_X_AXIS } from './ui/stabilityPlot';
 import { familyClosures } from './types';
 import type { Combo, Family, Terms } from './types';
 
 const CATALOG_BASE = 'catalog';
+// A user's combo/family/member/metric/x-axis choice survives a page reload or an HMR remount
+// during a live demo — sessionStorage rather than localStorage, since it's per-tab context,
+// not a durable preference. Both reads and writes are wrapped defensively: some browsers throw
+// on sessionStorage access in private/locked-down modes, and that must never block boot.
+const SESSION_KEY = 'elfo-ui-state';
+
+function readSession(): string | null {
+  try {
+    return sessionStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(state: PersistedUIState): void {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(state));
+  } catch {
+    // Storage unavailable or over quota — persistence is a nicety, not a requirement.
+  }
+}
 
 async function boot(): Promise<void> {
   const catalog = await loadCatalog(CATALOG_BASE);
@@ -27,14 +50,28 @@ async function boot(): Promise<void> {
   }
   const family0 = combo0.families[0];
 
-  const store = createStore({
+  const defaults: PersistedUIState = {
     comboId: combo0.id,
     familyN: family0.resonance_n,
     memberIndex: Math.floor(family0.members.length / 2),
+    metric: DEFAULT_METRIC,
+    xAxis: DEFAULT_X_AXIS,
+  };
+  // Hydration is best-effort: a stale/foreign comboId or familyN just falls through
+  // currentCombo()/currentFamily()'s existing `?? combo0`/`?? family0` fallbacks below, same
+  // as any other invalid store value would.
+  const hydrated = hydrateUIState(readSession(), defaults);
+
+  const store = createStore({
+    comboId: hydrated.comboId,
+    familyN: hydrated.familyN,
+    memberIndex: hydrated.memberIndex,
     animTime: 0,
     playing: true,
     speed: SPEED_DEFAULT,
     ghost: null,
+    metric: hydrated.metric,
+    xAxis: hydrated.xAxis,
   });
 
   const stageEl = document.getElementById('stage') as HTMLElement;
@@ -145,6 +182,18 @@ async function boot(): Promise<void> {
       void refreshAll();
     }
     if (s.ghost !== p.ghost) void refreshGhost();
+    // Metric/x-axis changes deliberately are NOT in the refreshAll() condition above — they're
+    // a redraw-only concern for the metric strip (see stabilityPlot.ts's own subscription),
+    // never a trajectory refetch. Persist whatever the write-worthy fields currently are.
+    if (
+      s.comboId !== p.comboId || s.familyN !== p.familyN || s.memberIndex !== p.memberIndex
+      || s.metric !== p.metric || s.xAxis !== p.xAxis
+    ) {
+      writeSession({
+        comboId: s.comboId, familyN: s.familyN, memberIndex: s.memberIndex,
+        metric: s.metric, xAxis: s.xAxis,
+      });
+    }
   });
 
   await refreshAll();

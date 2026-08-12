@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   comboById, createStore, displayOrder, elapsedRevs, energyNd, familyByN, formatRevs,
-  librationPeriodMonths, nearestMemberIndex, nearestMemberIndexByRank, nearestRational,
-  resonanceBadge, samplePosition, sidRevsPerClosure, stabilityMargin, symlog, synodicRevs,
-  trailingWindowIndices, windingAngleDeg,
+  hydrateUIState, librationPeriodMonths, nearestMemberIndex, nearestMemberIndexByRank,
+  nearestRational, resonanceBadge, samplePosition, sidRevsPerClosure, stabilityMargin, symlog,
+  synodicRevs, trailingWindowIndices, windingAngleDeg,
 } from './state';
-import type { AppState } from './state';
+import type { AppState, PersistedUIState } from './state';
 import { makeCatalog, makeFamily } from './testFixtures';
 import type { Terms } from './types';
 
 const INITIAL: AppState = {
   comboId: 'full', familyN: 25, memberIndex: 0,
   animTime: 0, playing: false, speed: 21600, ghost: null,
+  metric: 'winding', xAxis: 'hp',
 };
 
 describe('symlog', () => {
@@ -302,6 +303,55 @@ describe('energyNd', () => {
 
   it('matches the controller-computed value with c22 off', () => {
     expect(energyNd(STATE0, { ...FULL, c22: false })).toBeCloseTo(-1.794705074039040, 12);
+  });
+});
+
+describe('hydrateUIState', () => {
+  const defaults: PersistedUIState = {
+    comboId: 'full', familyN: 25, memberIndex: 2, metric: 'winding', xAxis: 'hp',
+  };
+
+  it('returns defaults for a null raw value (nothing stored yet)', () => {
+    expect(hydrateUIState(null, defaults)).toEqual(defaults);
+  });
+
+  it('returns defaults for garbage (unparseable) JSON', () => {
+    expect(hydrateUIState('{not json', defaults)).toEqual(defaults);
+  });
+
+  it('returns defaults for valid JSON that is not an object (e.g. a bare number or array)', () => {
+    expect(hydrateUIState('42', defaults)).toEqual(defaults);
+    expect(hydrateUIState('[1,2,3]', defaults)).toEqual(defaults);
+    expect(hydrateUIState('null', defaults)).toEqual(defaults);
+  });
+
+  it('adopts a fully-populated, well-typed stored value', () => {
+    const stored: PersistedUIState = {
+      comboId: 'no-earth', familyN: 40, memberIndex: 1, metric: 'margin', xAxis: 'energy',
+    };
+    expect(hydrateUIState(JSON.stringify(stored), defaults)).toEqual(stored);
+  });
+
+  it('falls back per-field for a partial or wrong-typed stored object, not all-or-nothing', () => {
+    const stored = { comboId: 'no-earth', familyN: 'not a number', metric: 123, xAxis: 'energy' };
+    expect(hydrateUIState(JSON.stringify(stored), defaults)).toEqual({
+      comboId: 'no-earth',          // valid string -> adopted
+      familyN: defaults.familyN,    // wrong type -> default
+      memberIndex: defaults.memberIndex, // missing -> default
+      metric: defaults.metric,      // wrong type (number, not string) -> default
+      xAxis: 'energy',              // valid string -> adopted
+    });
+  });
+
+  it('rejects a negative or non-finite memberIndex', () => {
+    expect(hydrateUIState(JSON.stringify({ memberIndex: -1 }), defaults).memberIndex)
+      .toBe(defaults.memberIndex);
+    expect(hydrateUIState(JSON.stringify({ memberIndex: Infinity }), defaults).memberIndex)
+      .toBe(defaults.memberIndex);
+  });
+
+  it('rejects an empty-string field rather than adopting a blank value', () => {
+    expect(hydrateUIState(JSON.stringify({ comboId: '' }), defaults).comboId).toBe(defaults.comboId);
   });
 });
 

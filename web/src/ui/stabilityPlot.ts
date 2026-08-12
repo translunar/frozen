@@ -232,6 +232,19 @@ function formatXTick(mode: XAxisKey, v: number, e0: number): string {
   }
 }
 
+export const DEFAULT_METRIC: MetricKey = 'winding';
+export const DEFAULT_X_AXIS: XAxisKey = 'hp';
+
+/** Type guards for AppState.metric/xAxis, which are loosely-typed `string` at the store level
+ * (see state.ts) — validates a stored/hydrated value is actually one of this version's known
+ * options before trusting it as the specific key type. */
+function isMetricKey(v: string): v is MetricKey {
+  return METRIC_OPTIONS.some((o) => o.key === v);
+}
+function isXAxisKey(v: string): v is XAxisKey {
+  return X_AXIS_OPTIONS.some((o) => o.key === v);
+}
+
 export interface StabilityPlot {
   setFamily(family: Family, terms: Terms): void;
   refresh(): void;
@@ -272,17 +285,32 @@ export function mountStabilityPlot(
 
   let family: Family | null = null;
   let terms: Terms | null = null;
-  let activeMetric: MetricKey = 'winding';
-  let activeXAxis: XAxisKey = 'hp';
-  select.value = activeMetric;
-  xSelect.value = activeXAxis;
+
+  // Selections live in the Store (AppState.metric/xAxis), not closure-local variables: any
+  // redraw path re-reads the authoritative current value instead of trusting a variable only
+  // this closure owns, and the choice survives a sessionStorage-hydrated reload (see main.ts).
+  // Values that don't match a known option (a garbage/foreign/future-version string that slid
+  // past hydrateUIState's basic type check) fall back to this module's own default rather than
+  // rendering a blank/broken selection.
+  const getActiveMetric = (): MetricKey => {
+    const m = store.get().metric;
+    return isMetricKey(m) ? m : DEFAULT_METRIC;
+  };
+  const getActiveXAxis = (): XAxisKey => {
+    const x = store.get().xAxis;
+    return isXAxisKey(x) ? x : DEFAULT_X_AXIS;
+  };
+
+  select.value = getActiveMetric();
+  xSelect.value = getActiveXAxis();
+  // The <select> elements themselves are created once, here, and never rebuilt — draw() only
+  // ever touches their `.value`, so an unrelated redraw (member/family change, resize) can't
+  // reset the user's selection out from under them.
   select.addEventListener('change', () => {
-    activeMetric = select.value as MetricKey;
-    draw();
+    store.update({ metric: select.value });
   });
   xSelect.addEventListener('change', () => {
-    activeXAxis = xSelect.value as XAxisKey;
-    draw();
+    store.update({ xAxis: xSelect.value });
   });
 
   const el = (name: string, attrs: Record<string, string>): SVGElement => {
@@ -378,6 +406,13 @@ export function mountStabilityPlot(
 
   function draw(): void {
     svg.innerHTML = '';
+    // Sync every render path — a redraw is never allowed to silently reset the user's choice,
+    // and this is also how a post-mount sessionStorage hydration (or another tab's change,
+    // were the store ever shared) becomes visible in the header.
+    const activeMetric = getActiveMetric();
+    const activeXAxis = getActiveXAxis();
+    select.value = activeMetric;
+    xSelect.value = activeXAxis;
     if (!family || !terms) return;
     const fam = family;
     const w = container.clientWidth || 800;
@@ -455,7 +490,7 @@ export function mountStabilityPlot(
     const fam = family;
     const rect = svg.getBoundingClientRect();
     const iw = Math.max(10, rect.width - MARGIN.left - MARGIN.right);
-    const { order, values } = orderFor(fam, activeXAxis, terms);
+    const { order, values } = orderFor(fam, getActiveXAxis(), terms);
     const orderedValues = order.map((idx) => values[idx]);
     const [xLo, xHi] = linearDomain(orderedValues);
     const x = scaleLinear().domain([xLo, xHi]).range([MARGIN.left, MARGIN.left + iw]);
@@ -477,7 +512,10 @@ export function mountStabilityPlot(
   });
   window.addEventListener('resize', () => draw());
   store.subscribe((s, p) => {
-    if (s.memberIndex !== p.memberIndex || s.familyN !== p.familyN || s.comboId !== p.comboId) draw();
+    if (
+      s.memberIndex !== p.memberIndex || s.familyN !== p.familyN || s.comboId !== p.comboId
+      || s.metric !== p.metric || s.xAxis !== p.xAxis
+    ) draw();
   });
 
   return {
