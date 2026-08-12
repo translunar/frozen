@@ -49,6 +49,30 @@ export function symlog(v: number): number {
   return Math.sign(v) * (a <= 1 ? a : 1 + Math.log10(a));
 }
 
+const SIDEREAL_MONTH_S = 86_400 * 27.321661;
+
+/** Winding angle of the resonant mode: acos(nu), clamped to a valid domain, in degrees. */
+export function windingAngleDeg(nu: number): number {
+  const clamped = Math.min(1, Math.max(-1, nu));
+  return Math.acos(clamped) * (180 / Math.PI);
+}
+
+/**
+ * Libration period implied by a mode's winding angle, in sidereal months: a full libration
+ * cycle takes (360/theta) closure periods. Infinity when theta = 0 (nu clamps to 1 — the mode
+ * doesn't wind at all, so there's no finite libration period).
+ */
+export function librationPeriodMonths(nu: number, periodS: number): number {
+  const thetaDeg = windingAngleDeg(nu);
+  if (thetaDeg === 0) return Infinity;
+  return ((360 / thetaDeg) * periodS) / SIDEREAL_MONTH_S;
+}
+
+/** Distance from the |nu| = 1 marginal-stability boundary, floored so it plots on a log axis. */
+export function stabilityMargin(nu: number): number {
+  return Math.max(1e-6, 1 - Math.abs(nu));
+}
+
 /** Same fractional position along a family of a different length. */
 export function nearestMemberIndex(fromIndex: number, fromLength: number, toLength: number): number {
   if (toLength <= 1 || fromLength <= 1) return 0;

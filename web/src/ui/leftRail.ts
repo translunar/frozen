@@ -33,7 +33,20 @@ export function formatReadout(member: Member, family: Family): Array<{ label: st
 
 export function memberEndpointLabel(member: Member): string {
   const hp = (member.r_peri_km - MOON_RADIUS_KM).toFixed(0);
-  return `#${member.index} · hp ${hp} km · e ${member.elements.e.toFixed(3)}`;
+  const ha = (member.r_apo_km - MOON_RADIUS_KM).toFixed(0);
+  return `hp ${hp} · ha ${ha} km · e ${member.elements.e.toFixed(3)}`;
+}
+
+/** Hours per revolution: the closure period spans `resonance_n` revs. */
+export function revHoursPerOrbit(family: Family): number {
+  const periodS = family.members[0]?.period_s ?? 0;
+  return Math.round(periodS / 3_600 / family.resonance_n);
+}
+
+/** Periapsis-altitude span across a family's members, rounded to whole km. */
+export function familyHpRangeKm(family: Family): [number, number] {
+  const alts = family.members.map((m) => m.r_peri_km - MOON_RADIUS_KM);
+  return [Math.round(Math.min(...alts)), Math.round(Math.max(...alts))];
 }
 
 export interface LeftRailHooks {
@@ -160,7 +173,14 @@ export function mountLeftRail(
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = `family-btn${fam.resonance_n === from.resonance_n ? ' active' : ''}`;
-      btn.textContent = `N = ${fam.resonance_n} · ${fam.members.length} members`;
+      const main = document.createElement('span');
+      main.className = 'family-btn-main';
+      main.textContent = `N = ${fam.resonance_n} · ~${revHoursPerOrbit(fam)} h/rev`;
+      const [hpMin, hpMax] = familyHpRangeKm(fam);
+      const sub = document.createElement('span');
+      sub.className = 'family-btn-sub';
+      sub.textContent = `hp ${hpMin}–${hpMax} km`;
+      btn.append(main, sub);
       btn.addEventListener('click', () => {
         const idx = nearestMemberIndex(store.get().memberIndex, from.members.length, fam.members.length);
         store.update({ familyN: fam.resonance_n, memberIndex: idx, animTime: 0 });

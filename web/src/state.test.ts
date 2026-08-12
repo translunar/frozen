@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   comboById, createStore, elapsedRevs, familyByN,
-  nearestMemberIndex, samplePosition, symlog,
+  librationPeriodMonths, nearestMemberIndex, samplePosition, stabilityMargin, symlog,
+  windingAngleDeg,
 } from './state';
 import type { AppState } from './state';
 import { makeCatalog } from './testFixtures';
@@ -19,6 +20,49 @@ describe('symlog', () => {
     expect(symlog(-1)).toBeCloseTo(-1, 12);
     expect(symlog(10)).toBeCloseTo(2, 12);
     expect(symlog(-1000)).toBeCloseTo(-4, 12);
+  });
+});
+
+describe('windingAngleDeg', () => {
+  it('is acos(nu) in degrees, hand-checked', () => {
+    expect(windingAngleDeg(0.8)).toBeCloseTo(36.87, 2);
+    expect(windingAngleDeg(1)).toBeCloseTo(0, 9);
+    expect(windingAngleDeg(-1)).toBeCloseTo(180, 9);
+    expect(windingAngleDeg(0)).toBeCloseTo(90, 9);
+  });
+
+  it('clamps out-of-range nu before taking acos', () => {
+    expect(windingAngleDeg(1.4)).toBeCloseTo(0, 9);
+    expect(windingAngleDeg(-1.4)).toBeCloseTo(180, 9);
+  });
+});
+
+describe('librationPeriodMonths', () => {
+  const SIDEREAL_MONTH_S = 86_400 * 27.321661;
+
+  it('converts winding angle + closure period into sidereal months', () => {
+    // theta = acos(0.8) = 36.8699 deg; libration period = (360/theta) * periodS / month
+    const periodS = 2_360_591;
+    const expected = (360 / windingAngleDeg(0.8)) * periodS / SIDEREAL_MONTH_S;
+    expect(librationPeriodMonths(0.8, periodS)).toBeCloseTo(expected, 9);
+  });
+
+  it('is Infinity when theta is exactly zero (nu clamps to 1, div-by-zero guard)', () => {
+    expect(librationPeriodMonths(1, 2_360_591)).toBe(Infinity);
+    expect(librationPeriodMonths(1.5, 2_360_591)).toBe(Infinity);
+  });
+});
+
+describe('stabilityMargin', () => {
+  it('is 1 - |nu|, floored for log plotting', () => {
+    expect(stabilityMargin(0.4)).toBeCloseTo(0.6, 12);
+    expect(stabilityMargin(-0.4)).toBeCloseTo(0.6, 12);
+    expect(stabilityMargin(0)).toBeCloseTo(1, 12);
+  });
+
+  it('floors at 1e-6 instead of hitting zero or negative', () => {
+    expect(stabilityMargin(1)).toBe(1e-6);
+    expect(stabilityMargin(1.2)).toBe(1e-6);
   });
 });
 
