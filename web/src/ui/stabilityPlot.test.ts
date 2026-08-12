@@ -199,4 +199,15 @@ describe('orientedOrder', () => {
     expect(orientedOrder([], [])).toEqual([]);
     expect(orientedOrder([0], [42])).toEqual([0]);
   });
+
+  it('documents the endpoint-only guarantee: ascending endpoints pass through even when the interior locally zigzags', () => {
+    // Endpoints ascend (10 -> 30), so no reversal — but the interior rises and falls
+    // (10, 50, 20, 60, 30): not globally monotone. orientedOrder only ever reverses the whole
+    // walk or leaves it alone; it never re-sorts point-by-point to iron this out, so the
+    // interior zigzag survives untouched. This is the near-degenerate case the "energy"
+    // x-axis option's label warns about — see the module docstring above orientedOrder.
+    const order = [0, 1, 2, 3, 4];
+    const values = [10, 50, 20, 60, 30];
+    expect(orientedOrder(order, values)).toBe(order); // unchanged: endpoints already ascend
+  });
 });

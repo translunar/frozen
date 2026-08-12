@@ -85,11 +85,19 @@ export function memberIndexFromEnergy(values: number[], target: number): number 
 
 /**
  * `order`, reversed if needed, so `values` (indexed by true member index — one entry per
- * `order` slot) reads ascending left-to-right. Only the two endpoints decide direction: the
- * base order (periapsis-altitude-sorted) is never independently re-sorted by `values` itself,
- * so an axis choice that moves in the opposite sense along the same hp-anchored walk (h_a
- * often falls as h_p rises) still lands in a single global orientation rather than being
- * resorted point-by-point, which would undo the zigzag fix `displayOrder` exists for.
+ * `order` slot) has its two ENDPOINTS ascending left-to-right. Only the endpoints decide
+ * direction: the base order (periapsis-altitude-sorted) is never independently re-sorted by
+ * `values` itself, so an axis choice that moves in the opposite sense along the same
+ * hp-anchored walk (h_a often falls as h_p rises) still lands in a single global orientation
+ * rather than being resorted point-by-point, which would undo the zigzag fix `displayOrder`
+ * exists for.
+ *
+ * This is an endpoint-only guarantee, not global monotonicity: for an axis that isn't itself
+ * monotone in hp (energy is the case this matters for — "near-degenerate" is exactly this),
+ * the interior can still rise and fall locally even after orientation, because the walk order
+ * is always the hp-sorted one (or its reverse), never re-sorted by the chosen axis's own
+ * values. That's deliberate — re-sorting per-axis would reintroduce the near-duplicate/zigzag
+ * problem `displayOrder` exists to fix, just against a different variable.
  */
 export function orientedOrder(order: number[], values: number[]): number[] {
   if (order.length < 2) return order;
