@@ -23,8 +23,14 @@ members, **only frozen orbits shown** — not an initial-condition tuning sandbo
 - **Full numerical propagation now; averaged theory later.** Doubly-averaged
   models eliminate the fast angle, so they cannot produce trajectories, ground
   tracks, or resonance behavior; they are deferred to a future phase as a
-  map-making layer. Phase 1 needs no averaged machinery (except one page of
-  classical frozen-orbit algebra used as corrector *seeds*).
+  map-making layer. Phase 1 needs no averaged machinery: the catalog's frozen
+  orbits come from the periodic-orbit corrector (exact in the full model), and
+  the only borrowing from averaged theory is a closed-form classical frozen-orbit
+  condition evaluated once per family as a Newton *seed* — continuation then
+  bootstraps each family from its own converged members. Averaged fixed points
+  would in any case be only approximate frozen orbits (offset by the discarded
+  short-period terms); the phase-2 averaged tier buys the global map (continuum
+  between resonances, libration widths, analytic sensitivity), not the catalog.
 - **Frozen orbits are computed as periodic orbits of the rotating frame.** With
   J2, C22, J3 static in the Earth-Moon rotating frame (synchronous rotation; C22
   locked to the Earth-Moon line) and the Earth as a fixed third body, the system
@@ -36,11 +42,19 @@ members, **only frozen orbits shown** — not an initial-condition tuning sandbo
   closure period. Families are labeled by resonance N (revs per closure). The
   synodic month becomes dynamically meaningful in phase 2: with the Sun on, only
   members commensurate with the synodic forcing stay strictly periodic.
-- **Known idealizations** (documented in-app where relevant): real lunar
-  librations (~±8° optical, longitude) smear real ground tracks; Sun, Earth-Moon
-  eccentricity, and real ephemeris each nudge members from periodic to
-  quasi-periodic. Watching which members degrade gracefully is a phase-2 feature,
-  not a phase-1 bug.
+- **Known idealizations** (documented in-app where relevant): the Moon is
+  modeled as rotating at constant rate with spin axis perpendicular to the
+  Earth-Moon orbit plane, so its surface is exactly static in the rotating
+  frame. The real Moon librates relative to that frame: ~±8° in longitude
+  (orbital eccentricity vs. uniform rotation — restored by the phase-2 ER3BP
+  upgrade) and ~±6.7° in latitude (lunar equator tilt to the orbit plane —
+  restored with a real orientation model, e.g. ANISE MOON_PA); physical
+  librations are arcsecond-level and negligible. Real ground tracks therefore
+  smear by several degrees around the exact closed phase-1 tracks — fine for
+  coverage intuition, not for pass timing over a specific site. Separately,
+  Sun, Earth-Moon eccentricity, and real ephemeris each nudge members from
+  periodic to quasi-periodic. Watching which members degrade gracefully is a
+  phase-2 feature, not a phase-1 bug.
 
 ## Architecture
 
