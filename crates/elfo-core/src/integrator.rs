@@ -45,6 +45,14 @@ impl Dp54 {
         let mut k1 = f(t, &y);
         let mut h = (tf - t0) * 1e-4;
         let mut samples = sample_times.iter().copied().peekable();
+        // Samples at (or before) the start time can never be reached by the
+        // "landed on it" test below; emit them here or they would sit at the head
+        // of the queue forever and silently suppress every later sample.
+        while let Some(&ts) = samples.peek() {
+            if ts > t0 + 1e-15 { break; }
+            if ts >= t0 - 1e-15 { observer(ts, &y); }
+            samples.next();
+        }
         while t < tf - 1e-15 {
             let mut hmax = tf - t;
             if let Some(&ts) = samples.peek() { if ts > t + 1e-15 { hmax = hmax.min(ts - t); } }
@@ -52,8 +60,11 @@ impl Dp54 {
             let (y5, k7, err) = self.step(f, t, &y, htry, &k1);
             if err <= 1.0 {
                 t += htry; y = y5; k1 = k7;
-                if let Some(&ts) = samples.peek() {
-                    if (t - ts).abs() < 1e-12 { observer(ts, &y); samples.next(); }
+                // `while`, not `if`: repeated sample times must all be consumed,
+                // otherwise a leftover blocks the rest of the queue.
+                while let Some(&ts) = samples.peek() {
+                    if ts > t + 1e-12 { break; }
+                    observer(ts, &y); samples.next();
                 }
                 h = htry * (0.9 * err.max(1e-10).powf(-0.2)).clamp(0.2, 5.0);
             } else {
@@ -139,6 +150,22 @@ mod tests {
         Dp54::default().propagate(&f, &y0, 0.0, 0.5, &[0.1, 0.25, 0.4],
             &mut |t, _| seen.push(t));
         assert_eq!(seen, vec![0.1, 0.25, 0.4]);
+    }
+
+    #[test]
+    fn sample_at_start_time_does_not_swallow_later_samples() {
+        // A sample at t0 can never be "landed on"; it must not stay queued and
+        // silently suppress every subsequent sample (which made a t=0-based
+        // trajectory scan observe nothing at all).
+        let fm = kepler_fm();
+        let y0 = [0.02, 0.0, 0.0, 0.0, -0.75, 0.0];
+        let f = |_t: f64, y: &[f64]| fm.eom(&[y[0],y[1],y[2],y[3],y[4],y[5]]).to_vec();
+        let mut seen = Vec::new();
+        let mut first = [0.0; 6];
+        Dp54::default().propagate(&f, &y0, 0.0, 0.5, &[0.0, 0.1, 0.25, 0.4],
+            &mut |t, y| { if seen.is_empty() { first.copy_from_slice(&y[..6]); } seen.push(t) });
+        assert_eq!(seen, vec![0.0, 0.1, 0.25, 0.4]);
+        assert_eq!(first, y0, "the t0 sample must report the initial state");
     }
 }
 
