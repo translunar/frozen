@@ -2,7 +2,7 @@
 # Generation takes roughly a minute. The real config is /catalog.toml (Task 15).
 members_per_direction = 3
 ds0 = 5e-4
-resonances = [25, 30]
+resonances = ["25", "30"]
 
 [[combos]]
 id = "full"

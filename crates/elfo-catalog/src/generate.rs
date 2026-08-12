@@ -9,12 +9,12 @@ use elfo_core::continuation::continue_family;
 use elfo_core::elements::{rotating_to_inertial, rv_to_coe};
 use elfo_core::forces::ForceModel;
 use elfo_core::integrator::Dp54;
-use elfo_core::seeds::elfo_seed_checked;
+use elfo_core::seeds::elfo_seed_resonant_checked;
 use elfo_core::shooting::{correct, seed_nodes, Constraint, PeriodicOrbit};
 use elfo_core::stability::{monodromy, stability_indices};
 use rayon::prelude::*;
 
-use crate::config::{CatalogConfig, ComboCfg};
+use crate::config::{CatalogConfig, ComboCfg, Resonance};
 use crate::qa::check_member;
 use crate::writer::{
     decimate, write_catalog, write_f32, ComboOut, ElementsOut, FamilyOut, MemberOut, Provenance,
@@ -25,18 +25,29 @@ use crate::writer::{
 pub fn run(config: &Path, out: &Path) -> anyhow::Result<()> {
     let cfg = CatalogConfig::load(config)?;
 
-    let pairs: Vec<(usize, u32)> = cfg
+    let pairs: Vec<(usize, Resonance)> = cfg
         .combos
         .iter()
         .enumerate()
-        .flat_map(|(ci, _)| cfg.resonances.iter().map(move |&n| (ci, n)))
+        .flat_map(|(ci, _)| cfg.resonances.iter().map(move |&r| (ci, r)))
+        .filter(|(ci, r)| {
+            let id = &cfg.combos[*ci].id;
+            if !generates(id, *r) {
+                eprintln!(
+                    "skipped: combo {id} n={r}: M:k families are generated for combo \
+                     '{FULL_COMBO_ID}' only"
+                );
+                return false;
+            }
+            true
+        })
         .collect();
 
     let results: anyhow::Result<Vec<(usize, Option<FamilyOut>)>> = pairs
         .par_iter()
-        .map(|&(ci, n)| -> anyhow::Result<(usize, Option<FamilyOut>)> {
+        .map(|&(ci, res)| -> anyhow::Result<(usize, Option<FamilyOut>)> {
             let combo = &cfg.combos[ci];
-            let family = build_family(combo, n, &cfg, out)?;
+            let family = build_family(combo, res, &cfg, out)?;
             Ok((ci, family))
         })
         .collect();
@@ -58,7 +69,7 @@ pub fn run(config: &Path, out: &Path) -> anyhow::Result<()> {
         }
     }
     for c in combos_out.iter_mut() {
-        c.families.sort_by_key(|f| f.resonance_n);
+        c.families.sort_by_key(|f| (f.resonance_n, f.closures));
     }
 
     let provenance = Provenance {
@@ -82,27 +93,65 @@ fn clone_orbit(o: &PeriodicOrbit) -> PeriodicOrbit {
     }
 }
 
-/// Seed + correct the first member of the `n`-rev family in `combo`'s force
-/// model, retrying once at `m = 4N` segments if `m = 2N` stalls. Returns
-/// `None` (having logged why to stderr) if the family is absent — that is
-/// data, not an error.
-fn first_member(combo: &ComboCfg, n: u32) -> Option<PeriodicOrbit> {
+/// The one combo the expensive `M:k` (`k > 1`) families are generated for.
+const FULL_COMBO_ID: &str = "full";
+
+/// Whether `(combo, res)` is in scope for this run.
+///
+/// The `M:k` (`k > 1`) families correct over the full `k`-closure period, so they
+/// carry 2M shooting segments — 200–350 for the entries in `catalog.toml`, against
+/// 50 for N = 25 — and the Jacobian SVD is cubic in that. They are generated for the
+/// reference force model only; the C22/J3/Earth sensitivity variants of the heavy
+/// families are a later, separately budgeted job. Every skip is announced on stderr,
+/// so an absent `no-c22/n149_2` is a recorded decision rather than a silent hole.
+fn generates(combo_id: &str, res: Resonance) -> bool {
+    res.closures == 1 || combo_id == FULL_COMBO_ID
+}
+
+/// Hard cap on shooting segments. The corrector SVDs a `(6m+1) × (6m+1)` Jacobian
+/// every Newton iteration, which is O(m³): the 173:2 family would ask for 692
+/// segments at 4M, a ~64× cost over the 173-segment solve. 400 keeps 2 nodes/rev
+/// through the largest configured `M` and clamps the retry instead of the first
+/// attempt, so nothing in the current catalog loses its first-pass resolution.
+const MAX_SEGMENTS: usize = 400;
+
+/// Seed + correct the first member of the `res` family in `combo`'s force model,
+/// retrying once at `m = 4M` segments if `m = 2M` stalls. Returns `None` (having
+/// logged why to stderr) if the family is absent — that is data, not an error.
+fn first_member(combo: &ComboCfg, res: Resonance) -> Option<PeriodicOrbit> {
     let fm = combo.force_model;
-    let (seed, t0) = match elfo_seed_checked(n, &fm) {
+    let (seed, t0) = match elfo_seed_resonant_checked(res.revs, res.closures, &fm) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("absent: combo {} n={n}: seed unreachable: {e}", combo.id);
+            eprintln!("absent: combo {} n={res}: seed unreachable: {e}", combo.id);
             return None;
         }
     };
-    for &m in &[2 * n as usize, 4 * n as usize] {
+    let mut last_err = String::new();
+    let mut tried: Vec<usize> = Vec::new();
+    for mult in [2usize, 4] {
+        let want = mult * res.revs as usize;
+        let m = want.min(MAX_SEGMENTS);
+        if m < want {
+            eprintln!(
+                "warn: combo {} n={res}: {mult}M = {want} segments capped at {MAX_SEGMENTS}",
+                combo.id
+            );
+        }
+        // With the cap in play 2M and 4M can collapse onto the same m; re-running an
+        // identical solve would just burn minutes for an identical answer.
+        if tried.contains(&m) {
+            continue;
+        }
+        tried.push(m);
         let nodes = seed_nodes(&fm, &seed, t0, m);
-        if let Ok(orbit) = correct(&fm, &nodes, t0, &Constraint::None) {
-            return Some(orbit);
+        match correct(&fm, &nodes, t0, &Constraint::None) {
+            Ok(orbit) => return Some(orbit),
+            Err(e) => last_err = e,
         }
     }
     eprintln!(
-        "absent: combo {} n={n}: corrector stalled at m=2N and m=4N",
+        "absent: combo {} n={res}: corrector stalled at m={tried:?}: {last_err}",
         combo.id
     );
     None
@@ -113,19 +162,20 @@ fn first_member(combo: &ComboCfg, n: u32) -> Option<PeriodicOrbit> {
 /// means the family is absent (combo present, family missing).
 fn build_family(
     combo: &ComboCfg,
-    n: u32,
+    res: Resonance,
     cfg: &CatalogConfig,
     out: &Path,
 ) -> anyhow::Result<Option<FamilyOut>> {
     let fm = combo.force_model;
 
-    let Some(first) = first_member(combo, n) else {
+    let Some(first) = first_member(combo, res) else {
         return Ok(None);
     };
 
+    let members_per_direction = cfg.members_for(res);
     let first_pos = clone_orbit(&first);
-    let pos = continue_family(&fm, first_pos, cfg.members_per_direction, cfg.ds0, 1.0);
-    let neg = continue_family(&fm, first, cfg.members_per_direction, cfg.ds0, -1.0);
+    let pos = continue_family(&fm, first_pos, members_per_direction, cfg.ds0, 1.0);
+    let neg = continue_family(&fm, first, members_per_direction, cfg.ds0, -1.0);
 
     // Concatenate: reverse the -1 side (dropping its duplicated first
     // member, shared with pos[0]), then the +1 side, giving a family ordered
@@ -139,7 +189,7 @@ fn build_family(
     // member, in family order (so QA jump checks compare adjacent members).
     let mut candidates: Vec<(MemberOut, Vec<[f64; 3]>)> = Vec::with_capacity(orbits.len());
     for orbit in &orbits {
-        candidates.push(build_member(&fm, orbit, n));
+        candidates.push(build_member(&fm, orbit, res));
     }
 
     let mut kept: Vec<(MemberOut, Vec<[f64; 3]>)> = Vec::with_capacity(candidates.len());
@@ -151,7 +201,7 @@ fn build_family(
             .any(|f| f.contains("residual") || f.contains("periapsis"));
         for f in &flags {
             eprintln!(
-                "QA[{} n={n}]: {}{}",
+                "QA[{} n={res}]: {}{}",
                 combo.id,
                 f,
                 if hard_fail { " (dropping member)" } else { "" }
@@ -165,17 +215,18 @@ fn build_family(
     }
 
     if kept.is_empty() {
-        eprintln!("absent: combo {} n={n}: no member survived QA", combo.id);
+        eprintln!("absent: combo {} n={res}: no member survived QA", combo.id);
         return Ok(None);
     }
 
     // Re-index 0..len and write per-member trajectory files plus the
     // decimated family preview.
+    let dir = res.dir();
     let mut preview_points: Vec<[f64; 3]> = Vec::new();
     let mut preview_counts: Vec<u32> = Vec::new();
     for (i, (member, positions)) in kept.iter_mut().enumerate() {
         member.index = i;
-        member.traj = format!("{}/n{n}/{i}.f32", combo.id);
+        member.traj = format!("{}/{dir}/{i}.f32", combo.id);
         write_f32(&out.join(&member.traj), positions)?;
 
         let dec = decimate(positions, 1000);
@@ -183,26 +234,31 @@ fn build_family(
         preview_points.extend(dec);
     }
 
-    let preview_rel = format!("{}/n{n}/preview.f32", combo.id);
+    let preview_rel = format!("{}/{dir}/preview.f32", combo.id);
     write_f32(&out.join(&preview_rel), &preview_points)?;
 
     let members: Vec<MemberOut> = kept.into_iter().map(|(m, _)| m).collect();
     Ok(Some(FamilyOut {
-        resonance_n: n,
+        resonance_n: res.revs,
+        closures: res.closures,
         members,
         preview: preview_rel,
         preview_counts,
     }))
 }
 
-/// Sample one member's trajectory at `100*N` uniform times over its own
-/// period (t=0 plus `k*T/(100N)` for `k = 1..100N-1`), compute its elements
+/// Sample one member's trajectory at `100*M` uniform times over its own
+/// period (t=0 plus `j*T/(100M)` for `j = 1..100M-1`), compute its elements
 /// at the minimum-radius sample, stability indices, and r_peri/r_apo from
 /// the sampled radii. Returns the `MemberOut` (index/traj left as
 /// placeholders, filled in by the caller once QA has decided the final
 /// order) and its trajectory positions in km.
-fn build_member(fm: &ForceModel, orbit: &PeriodicOrbit, n: u32) -> (MemberOut, Vec<[f64; 3]>) {
-    let total = 100 * n as usize;
+///
+/// The period is the *full* `k`-closure period, so 100 samples per rev holds for
+/// `M:k` families exactly as it does for `N:1`: an `M:2` member gets `100M`
+/// samples spread over two node periods.
+fn build_member(fm: &ForceModel, orbit: &PeriodicOrbit, res: Resonance) -> (MemberOut, Vec<[f64; 3]>) {
+    let total = 100 * res.revs as usize;
     let period = orbit.period;
     let integ = Dp54::default();
     let f = |_t: f64, y: &[f64]| fm.eom(&[y[0], y[1], y[2], y[3], y[4], y[5]]).to_vec();
@@ -286,4 +342,23 @@ fn git_hash() -> String {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_full_combo_gets_rational_families() {
+        let n25 = Resonance { revs: 25, closures: 1 };
+        let d149 = Resonance { revs: 149, closures: 2 };
+        // classical families: every combo, as before
+        for id in ["full", "no-c22", "no-j3", "no-earth"] {
+            assert!(generates(id, n25), "{id} must still generate N:1 families");
+        }
+        assert!(generates("full", d149));
+        for id in ["no-c22", "no-j3", "no-earth"] {
+            assert!(!generates(id, d149), "{id} must skip the heavy M:2 families");
+        }
+    }
 }

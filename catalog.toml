@@ -1,6 +1,27 @@
 members_per_direction = 40
 ds0 = 2e-2
-resonances = [18, 20, 22, 25, 27, 30, 35, 40, 45, 50, 55, 60, 70]
+
+# Rotating-frame resonances, written "M" (= M:1) or "M:k": the orbit closes after
+# the node has regressed k times, having flown M revs. The M:2 entries are the
+# half-integer families — M/2 revs per node period, no N:1 counterpart — picked
+# from the dual-resonance screening in
+# docs/superpowers/litreview-dual-resonance-elfos.md:
+#   149:2  74.5 revs/month, a ≈ 4996 km — the published ERGO repeat-ground-track orbit
+#   111:2  55.5 revs/month, a ≈ 6079 km — the true half-integer of the 12-h band
+#    99:2  49.5 revs/month, a ≈ 6561 km — cleanest double half-integer, JAXA-adjacent
+#   173:2  86.5 revs/month, a ≈ 4517 km — the low-altitude end of the D-table
+# They cost 200–350 shooting segments per correction, so they run for the `full`
+# combo only and with a shorter continuation (see the override table below).
+resonances = [
+  "18", "20", "22", "25", "27", "30", "35", "40", "45", "50", "55", "60", "70",
+  "149:2", "111:2", "99:2", "173:2",
+]
+
+[members_per_direction_override]
+"149:2" = 10
+"111:2" = 10
+"99:2" = 10
+"173:2" = 10
 
 [[combos]]
 id = "full"

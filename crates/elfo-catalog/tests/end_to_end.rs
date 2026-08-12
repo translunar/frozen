@@ -8,7 +8,7 @@ const MEMBERS_PER_DIRECTION: usize = 2;
 const TINY_CONFIG: &str = r#"
 members_per_direction = 2
 ds0 = 5e-4
-resonances = [25]
+resonances = ["25"]
 
 [[combos]]
 id = "full"
@@ -37,6 +37,10 @@ fn end_to_end_generates_one_family() {
     let families = combos[0]["families"].as_array().expect("families array");
     assert_eq!(families.len(), 1, "expected exactly 1 family (n=25)");
     assert_eq!(families[0]["resonance_n"], 25);
+    assert_eq!(
+        families[0]["closures"], 1,
+        "an integer-spelled resonance must be written as the k=1 rational"
+    );
 
     let members = families[0]["members"].as_array().expect("members array");
     assert!(

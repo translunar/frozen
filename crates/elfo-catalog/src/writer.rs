@@ -5,9 +5,9 @@ use elfo_core::constants::{
     A_EM_KM, GM_EARTH_KM3S2, GM_MOON_KM3S2, MOON_C22, MOON_J2, MOON_J3, R_MOON_KM,
 };
 use elfo_core::forces::ForceModel;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ElementsOut {
     pub a_km: f64,
     pub e: f64,
@@ -16,7 +16,7 @@ pub struct ElementsOut {
     pub raan_deg: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemberOut {
     pub index: usize,
     pub state0: [f64; 6],
@@ -31,12 +31,23 @@ pub struct MemberOut {
     pub traj: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FamilyOut {
+    /// Revolutions per closure period, `M` of the `M:k` resonance.
     pub resonance_n: u32,
+    /// Node closures per period, `k` of the `M:k` resonance. `1` for every family
+    /// that existed before rational resonances, and defaulted to `1` on read so a
+    /// consumer written against schema_version 1 (the web app, until it is taught
+    /// about `k`) sees an unchanged field set plus one it can ignore.
+    #[serde(default = "one_closure")]
+    pub closures: u32,
     pub members: Vec<MemberOut>,
     pub preview: String,
     pub preview_counts: Vec<u32>,
+}
+
+fn one_closure() -> u32 {
+    1
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -147,6 +158,23 @@ mod tests {
             &std::fs::read_to_string(dir.path().join("catalog.json")).unwrap()).unwrap();
         assert_eq!(v["schema_version"], 1);
         assert!(v["combos"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn family_without_closures_reads_back_as_single_closure() {
+        // A schema_version-1 catalog.json (written before rational resonances) has no
+        // `closures` key. Reading one must yield the N:1 meaning, not a 0:0 family.
+        let fam: FamilyOut = serde_json::from_str(
+            r#"{"resonance_n":25,"members":[],"preview":"full/n25/preview.f32",
+                "preview_counts":[]}"#,
+        )
+        .unwrap();
+        assert_eq!((fam.resonance_n, fam.closures), (25, 1));
+        // and a rational family round-trips through the same JSON
+        let dual = FamilyOut { closures: 2, ..fam };
+        let text = serde_json::to_string(&dual).unwrap();
+        assert!(text.contains("\"closures\":2"), "{text}");
+        assert_eq!(serde_json::from_str::<FamilyOut>(&text).unwrap().closures, 2);
     }
 
     #[test]
