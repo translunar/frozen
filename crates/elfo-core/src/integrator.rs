@@ -141,3 +141,57 @@ mod tests {
         assert_eq!(seen, vec![0.1, 0.25, 0.4]);
     }
 }
+
+#[cfg(test)]
+mod stm_tests {
+    use super::*;
+    use crate::forces::ForceModel;
+    #[test]
+    fn stm_matches_finite_difference_of_flow() {
+        let fm = ForceModel { j2: true, c22: true, j3: true, earth: true };
+        let y0 = [0.02, 0.003, 0.012, 0.05, -0.6, 0.28];
+        let integ = Dp54::default();
+        let (_, phi) = propagate_stm(&integ, &fm, &y0, 0.0, 0.4);
+        let h = 1e-7;
+        let f = |_t: f64, y: &[f64]| fm.eom(&[y[0],y[1],y[2],y[3],y[4],y[5]]).to_vec();
+        for col in 0..6 {
+            let (mut yp, mut ym) = (y0, y0); yp[col] += h; ym[col] -= h;
+            let fp = integ.propagate(&f, &yp, 0.0, 0.4, &[], &mut |_,_|{});
+            let fm_ = integ.propagate(&f, &ym, 0.0, 0.4, &[], &mut |_,_|{});
+            for row in 0..6 {
+                let fd = (fp[row] - fm_[row]) / (2.0 * h);
+                assert!((phi[(row, col)] - fd).abs() < (1e-5 * fd.abs()).max(1e-5),
+                    "Φ[{row},{col}] {} vs fd {}", phi[(row,col)], fd);
+            }
+        }
+    }
+}
+
+use crate::forces::ForceModel;
+use nalgebra::SMatrix;
+
+pub fn propagate_stm(integ: &Dp54, fm: &ForceModel, y0: &[f64;6], t0: f64, tf: f64)
+    -> ([f64;6], SMatrix<f64,6,6>) {
+    let mut z0 = vec![0.0; 42];
+    z0[..6].copy_from_slice(y0);
+    for k in 0..6 { z0[6 + k*6 + k] = 1.0; } // Φ = I, column-major blocks
+    let f = |_t: f64, z: &[f64]| {
+        let s = [z[0],z[1],z[2],z[3],z[4],z[5]];
+        let a = fm.accel_jacobian(&s);
+        let mut dz = vec![0.0; 42];
+        dz[..6].copy_from_slice(&fm.eom(&s));
+        for col in 0..6 {
+            for row in 0..6 {
+                let mut acc = 0.0;
+                for m in 0..6 { acc += a[row][m] * z[6 + col*6 + m]; }
+                dz[6 + col*6 + row] = acc;
+            }
+        }
+        dz
+    };
+    let zf = integ.propagate(&f, &z0, t0, tf, &[], &mut |_,_|{});
+    let mut yf = [0.0;6]; yf.copy_from_slice(&zf[..6]);
+    let mut phi = SMatrix::<f64,6,6>::zeros();
+    for col in 0..6 { for row in 0..6 { phi[(row,col)] = zf[6 + col*6 + row]; } }
+    (yf, phi)
+}
