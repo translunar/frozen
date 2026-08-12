@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "combo_id": "no-earth",
+  "absent": [
+    {
+      "resonance": "18",
+      "note": "analytic seed: corrector stalled at m=[36, 72]: max iterations"
+    },
+    {
+      "resonance": "20",
+      "note": "analytic seed: corrector stalled at m=[40, 80]: max iterations"
+    },
+    {
+      "resonance": "22",
+      "note": "analytic seed: corrector stalled at m=[44, 88]: stalled at residual 0.000005358949888493395"
+    },
+    {
+      "resonance": "25",
+      "note": "analytic seed: corrector stalled at m=[50, 100]: stalled at residual 0.000001329947580031585"
+    },
+    {
+      "resonance": "27",
+      "note": "analytic seed: corrector stalled at m=[54, 108]: max iterations"
+    },
+    {
+      "resonance": "30",
+      "note": "analytic seed: corrector stalled at m=[60, 120]: stalled at residual 0.000002265782083664316"
+    },
+    {
+      "resonance": "35",
+      "note": "analytic seed: corrector stalled at m=[70, 140]: max iterations"
+    },
+    {
+      "resonance": "40",
+      "note": "analytic seed: corrector stalled at m=[80, 160]: stalled at residual 0.0000053333017545866885"
+    },
+    {
+      "resonance": "45",
+      "note": "analytic seed: corrector stalled at m=[90, 180]: stalled at residual 0.000003858589022428301"
+    },
+    {
+      "resonance": "50",
+      "note": "analytic seed: corrector stalled at m=[100, 200]: stalled at residual 0.000008638337298972221"
+    },
+    {
+      "resonance": "55",
+      "note": "analytic seed: corrector stalled at m=[110, 220]: stalled at residual 0.0000022607047089192797"
+    },
+    {
+      "resonance": "60",
+      "note": "analytic seed: corrector stalled at m=[120, 240]: stalled at residual 0.000001059995297833169"
+    },
+    {
+      "resonance": "70",
+      "note": "analytic seed: corrector stalled at m=[140, 280]: stalled at residual 0.0000014512393270993407"
+    }
+  ]
+}

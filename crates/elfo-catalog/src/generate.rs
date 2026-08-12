@@ -16,13 +16,46 @@ use rayon::prelude::*;
 
 use crate::config::{CatalogConfig, ComboCfg, Resonance};
 use crate::qa::check_member;
+use crate::seedcache::{SeedCache, SeedRecord, SEED_SCHEMA_VERSION};
 use crate::writer::{
     decimate, write_catalog, write_f32, ComboOut, ElementsOut, FamilyOut, MemberOut, Provenance,
 };
 
+/// Knobs on a generation run that are not part of the catalog's *definition* (which
+/// lives in `catalog.toml`) but of how this particular invocation treats the seed
+/// cache. Kept out of the config file deliberately: `--write-seeds` is an authoring
+/// action, not a property of the catalog.
+#[derive(Debug, Clone)]
+pub struct GenOptions {
+    /// Where the committed first-member seeds live.
+    pub seeds: SeedCache,
+    /// Update the cache from this run: write converged first members and confirmed
+    /// absences back to `seeds/`.
+    pub write_seeds: bool,
+    /// Attempt families listed in `absent.json` anyway. Set this after touching the
+    /// corrector, the seed solver or the force model — the recorded absences are
+    /// measurements of *this* code, and they expire when it changes.
+    pub retry_absent: bool,
+}
+
+impl Default for GenOptions {
+    fn default() -> Self {
+        GenOptions {
+            seeds: SeedCache::new(SeedCache::default_root()),
+            write_seeds: false,
+            retry_absent: matches!(std::env::var("ELFO_RETRY_ABSENT").as_deref(), Ok("1")),
+        }
+    }
+}
+
 /// Public entry point: load `config`, generate every family, write the
 /// catalog (JSON + per-member/preview `.f32` trajectories) under `out`.
 pub fn run(config: &Path, out: &Path) -> anyhow::Result<()> {
+    run_with(config, out, &GenOptions::default())
+}
+
+/// [`run`] with explicit seed-cache options.
+pub fn run_with(config: &Path, out: &Path, opts: &GenOptions) -> anyhow::Result<()> {
     let cfg = CatalogConfig::load(config)?;
 
     let pairs: Vec<(usize, Resonance)> = cfg
@@ -43,12 +76,12 @@ pub fn run(config: &Path, out: &Path) -> anyhow::Result<()> {
         })
         .collect();
 
-    let results: anyhow::Result<Vec<(usize, Option<FamilyOut>)>> = pairs
+    let results: anyhow::Result<Vec<(usize, Resonance, Outcome)>> = pairs
         .par_iter()
-        .map(|&(ci, res)| -> anyhow::Result<(usize, Option<FamilyOut>)> {
+        .map(|&(ci, res)| -> anyhow::Result<(usize, Resonance, Outcome)> {
             let combo = &cfg.combos[ci];
-            let family = build_family(combo, res, &cfg, out)?;
-            Ok((ci, family))
+            let outcome = build_family(combo, res, &cfg, out, opts)?;
+            Ok((ci, res, outcome))
         })
         .collect();
     let results = results?;
@@ -63,10 +96,26 @@ pub fn run(config: &Path, out: &Path) -> anyhow::Result<()> {
             families: Vec::new(),
         })
         .collect();
-    for (ci, family) in results {
-        if let Some(fam) = family {
+    // Cache updates are collected here and applied serially after the parallel
+    // sweep: a rayon worker writing into `seeds/` would race every other worker on
+    // the same combo's `absent.json`.
+    let mut seeds_to_write: Vec<SeedRecord> = Vec::new();
+    let mut absences: Vec<(usize, Resonance, String)> = Vec::new();
+    let mut present: Vec<(usize, Resonance)> = Vec::new();
+    for (ci, res, outcome) in results {
+        if let Some(fam) = outcome.family {
             combos_out[ci].families.push(fam);
         }
+        if let Some(rec) = outcome.seed {
+            present.push((ci, res));
+            seeds_to_write.push(rec);
+        }
+        if let Some(note) = outcome.absent {
+            absences.push((ci, res, note));
+        }
+    }
+    if opts.write_seeds {
+        write_cache_updates(&cfg, opts, &seeds_to_write, &absences, &present)?;
     }
     for c in combos_out.iter_mut() {
         c.families.sort_by_key(|f| (f.resonance_n, f.closures));
@@ -115,16 +164,92 @@ fn generates(combo_id: &str, res: Resonance) -> bool {
 /// attempt, so nothing in the current catalog loses its first-pass resolution.
 const MAX_SEGMENTS: usize = 400;
 
+/// Try the cached first member for `(combo, res)`. A hit that still converges is
+/// worth 5–15 Newton steps of the analytic path; a hit that *stops* converging is
+/// reported and falls through, because the honest reading of that is "the physics
+/// under this seed changed", not "the run failed".
+///
+/// The same `2M`-then-`4M` escalation as the analytic path, and it is load-bearing
+/// rather than symmetric-for-its-own-sake: some cached seeds were *found* at `4M`
+/// (N = 70 is), and `seed_nodes` rebuilds the node set by re-propagating from
+/// `state0`, so the warm start is not handed the converged node set — it is handed a
+/// nearby one, and it needs the same resolution that found the orbit to close it
+/// again. Without the retry, N = 70 would be banked and then silently unusable.
+fn warm_start(combo: &ComboCfg, res: Resonance, cache: &SeedCache) -> Option<PeriodicOrbit> {
+    let rec = cache.load(&combo.id, res)?;
+    let mut tried: Vec<usize> = Vec::new();
+    let mut last_err = String::new();
+    for mult in [2usize, 4] {
+        let m = (mult * res.revs as usize).min(MAX_SEGMENTS);
+        if tried.contains(&m) {
+            continue;
+        }
+        tried.push(m);
+        // Both the node build and the correction run under `catch_unwind`. The
+        // integrator *panics* on a step-size collapse — a deliberate choice
+        // elsewhere in elfo-core, since a collapsed step in a catalog solve means a
+        // trajectory that has gone hyperbolic or hit the Moon — and a seed stale
+        // enough to do that would otherwise take the entire catalog run down from
+        // inside a rayon worker. The cache is committed data that outlives the
+        // physics it was measured against, so "this seed is no longer usable" has to
+        // degrade to a fallback, not an abort. Correctness is unaffected: the
+        // fallback is the analytic seed, which is what a cache miss already does.
+        let solved = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let nodes = seed_nodes(&combo.force_model, &rec.state0, rec.period_nd, m);
+            correct(&combo.force_model, &nodes, rec.period_nd, &Constraint::None)
+        }));
+        let solved = match solved {
+            Ok(r) => r,
+            Err(_) => Err("cached seed diverged the integrator".to_string()),
+        };
+        match solved {
+            Ok(orbit) => {
+                eprintln!(
+                    "warm: combo {} n={res}: cached seed (from {}) converged at m={m}, \
+                     residual {:.3e}",
+                    combo.id, rec.generated_by, orbit.residual
+                );
+                return Some(orbit);
+            }
+            Err(e) => last_err = e,
+        }
+    }
+    eprintln!(
+        "warn: combo {} n={res}: cached seed (from {}) no longer converges at m={tried:?} \
+         ({last_err}); falling back to the analytic seed",
+        combo.id, rec.generated_by
+    );
+    None
+}
+
 /// Seed + correct the first member of the `res` family in `combo`'s force model,
 /// retrying once at `m = 4M` segments if `m = 2M` stalls. Returns `None` (having
 /// logged why to stderr) if the family is absent — that is data, not an error.
-fn first_member(combo: &ComboCfg, res: Resonance) -> Option<PeriodicOrbit> {
+///
+/// The seed cache is consulted first and the recorded-absence list second, in that
+/// order: a converged seed for a family that also appears in `absent.json` (because
+/// it was conquered by the campaign but the list was not cleaned) must win, since it
+/// is direct evidence against the absence.
+fn first_member(combo: &ComboCfg, res: Resonance, opts: &GenOptions) -> FirstMember {
     let fm = combo.force_model;
+    if let Some(orbit) = warm_start(combo, res, &opts.seeds) {
+        return FirstMember::Converged(orbit);
+    }
+    if !opts.retry_absent {
+        if let Some(note) = opts.seeds.absent_note(&combo.id, res) {
+            eprintln!(
+                "absent: combo {} n={res}: skipped, recorded in absent.json ({note}); \
+                 set ELFO_RETRY_ABSENT=1 to attempt it anyway",
+                combo.id
+            );
+            return FirstMember::Skipped;
+        }
+    }
     let (seed, t0) = match elfo_seed_resonant_checked(res.revs, res.closures, &fm) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("absent: combo {} n={res}: seed unreachable: {e}", combo.id);
-            return None;
+            return FirstMember::Absent(format!("seed unreachable: {e}"));
         }
     };
     let mut last_err = String::new();
@@ -146,7 +271,7 @@ fn first_member(combo: &ComboCfg, res: Resonance) -> Option<PeriodicOrbit> {
         tried.push(m);
         let nodes = seed_nodes(&fm, &seed, t0, m);
         match correct(&fm, &nodes, t0, &Constraint::None) {
-            Ok(orbit) => return Some(orbit),
+            Ok(orbit) => return FirstMember::Converged(orbit),
             Err(e) => last_err = e,
         }
     }
@@ -154,22 +279,63 @@ fn first_member(combo: &ComboCfg, res: Resonance) -> Option<PeriodicOrbit> {
         "absent: combo {} n={res}: corrector stalled at m={tried:?}: {last_err}",
         combo.id
     );
-    None
+    FirstMember::Absent(format!("analytic seed: corrector stalled at m={tried:?}: {last_err}"))
+}
+
+/// What the first-member solve produced, distinguishing the two kinds of absence:
+/// one that was *measured* on this run and is therefore worth recording, and one
+/// that was skipped *because* it is already recorded.
+enum FirstMember {
+    Converged(PeriodicOrbit),
+    /// Measured absence, with the note to store in `absent.json`.
+    Absent(String),
+    /// Not attempted: already on the absence list.
+    Skipped,
+}
+
+/// What one (combo, resonance) pair contributed: its family, if any, plus whatever
+/// the seed cache should learn from it.
+struct Outcome {
+    family: Option<FamilyOut>,
+    /// The converged first member, for `--write-seeds`.
+    seed: Option<SeedRecord>,
+    /// A freshly measured absence, for `--write-seeds`.
+    absent: Option<String>,
 }
 
 /// Build one (combo, resonance) family end to end: seed/correct, continue in
-/// both directions, sample + QA every member, write its files. `Ok(None)`
-/// means the family is absent (combo present, family missing).
+/// both directions, sample + QA every member, write its files. An `Outcome` with
+/// `family: None` means the family is absent (combo present, family missing).
 fn build_family(
     combo: &ComboCfg,
     res: Resonance,
     cfg: &CatalogConfig,
     out: &Path,
-) -> anyhow::Result<Option<FamilyOut>> {
+    opts: &GenOptions,
+) -> anyhow::Result<Outcome> {
     let fm = combo.force_model;
 
-    let Some(first) = first_member(combo, res) else {
-        return Ok(None);
+    let first = match first_member(combo, res, opts) {
+        FirstMember::Converged(o) => o,
+        FirstMember::Absent(note) => {
+            return Ok(Outcome { family: None, seed: None, absent: Some(note) })
+        }
+        FirstMember::Skipped => return Ok(Outcome { family: None, seed: None, absent: None }),
+    };
+
+    // Snapshot the converged first member *before* continuation consumes it: this,
+    // not `kept[0]`, is the seed-cache record. `kept[0]` is the far end of the
+    // negative continuation branch, several arclength steps away, and re-seeding
+    // from it would walk the family a little further each time it was regenerated.
+    let seed_record = SeedRecord {
+        schema_version: SEED_SCHEMA_VERSION,
+        combo_id: combo.id.clone(),
+        revs: res.revs,
+        closures: res.closures,
+        state0: first.nodes[0],
+        period_nd: first.period,
+        residual: first.residual,
+        generated_by: git_hash(),
     };
 
     let members_per_direction = cfg.members_for(res);
@@ -215,8 +381,11 @@ fn build_family(
     }
 
     if kept.is_empty() {
+        // Absent, but *not* recorded in `absent.json`: the corrector converged, so
+        // the seed is good and re-attempting it next run is cheap. What failed was
+        // QA, and skipping the family on that basis would hide a QA regression.
         eprintln!("absent: combo {} n={res}: no member survived QA", combo.id);
-        return Ok(None);
+        return Ok(Outcome { family: None, seed: Some(seed_record), absent: None });
     }
 
     // Re-index 0..len and write per-member trajectory files plus the
@@ -238,13 +407,63 @@ fn build_family(
     write_f32(&out.join(&preview_rel), &preview_points)?;
 
     let members: Vec<MemberOut> = kept.into_iter().map(|(m, _)| m).collect();
-    Ok(Some(FamilyOut {
-        resonance_n: res.revs,
-        closures: res.closures,
-        members,
-        preview: preview_rel,
-        preview_counts,
-    }))
+    Ok(Outcome {
+        family: Some(FamilyOut {
+            resonance_n: res.revs,
+            closures: res.closures,
+            members,
+            preview: preview_rel,
+            preview_counts,
+        }),
+        seed: Some(seed_record),
+        absent: None,
+    })
+}
+
+/// Apply the run's cache updates: store every converged first member whose numbers
+/// actually moved, and merge the freshly measured absences into each combo's
+/// `absent.json` (clearing any family that converged this time).
+///
+/// Records that describe the same orbit as the one already on disk are skipped
+/// rather than rewritten. `generated_by` changes on every commit, so rewriting
+/// unconditionally would put every seed file in the diff of every regeneration and
+/// make "which seeds actually changed?" unanswerable from the git log.
+fn write_cache_updates(
+    cfg: &CatalogConfig,
+    opts: &GenOptions,
+    seeds: &[SeedRecord],
+    absences: &[(usize, Resonance, String)],
+    present: &[(usize, Resonance)],
+) -> anyhow::Result<()> {
+    let mut written = 0usize;
+    for rec in seeds {
+        let res = Resonance { revs: rec.revs, closures: rec.closures };
+        match opts.seeds.load(&rec.combo_id, res) {
+            Some(old) if old.same_orbit(rec) => continue,
+            _ => {
+                opts.seeds.store(rec)?;
+                written += 1;
+            }
+        }
+    }
+    for (ci, combo) in cfg.combos.iter().enumerate() {
+        let newly_absent: Vec<(Resonance, String)> = absences
+            .iter()
+            .filter(|(i, _, _)| *i == ci)
+            .map(|(_, r, note)| (*r, note.clone()))
+            .collect();
+        let converged: Vec<Resonance> =
+            present.iter().filter(|(i, _)| *i == ci).map(|(_, r)| *r).collect();
+        if newly_absent.is_empty() && converged.is_empty() {
+            continue;
+        }
+        opts.seeds.update_absences(&combo.id, &newly_absent, &converged)?;
+    }
+    eprintln!(
+        "seed cache: {written} seed file(s) written or updated under {}",
+        opts.seeds.root().display()
+    );
+    Ok(())
 }
 
 /// Sample one member's trajectory at `100*M` uniform times over its own

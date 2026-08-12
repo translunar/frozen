@@ -220,6 +220,7 @@ dependencies = [
  "chrono",
  "clap",
  "elfo-core",
+ "nalgebra",
  "rayon",
  "serde",
  "serde_json",

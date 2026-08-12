@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "combo_id": "full",
+  "absent": [
+    {
+      "resonance": "149:2",
+      "note": "analytic seed: corrector stalled at m=[298, 400]: stalled at residual 0.008350325322860952"
+    },
+    {
+      "resonance": "173:2",
+      "note": "analytic seed: corrector stalled at m=[346, 400]: stalled at residual 0.013443350075107035"
+    }
+  ]
+}

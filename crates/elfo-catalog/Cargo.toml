@@ -15,3 +15,6 @@ anyhow = "1"
 
 [dev-dependencies]
 tempfile = "3"
+# The `campaign` example implements a Levenberg-damped corrector on top of
+# elfo-core's public `build_system`, deliberately outside the shipped corrector.
+nalgebra = "0.33"
