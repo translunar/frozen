@@ -113,4 +113,10 @@ describe('familyReferenceTag', () => {
     family.members[2].elements.a_km = 50_000;
     expect(familyReferenceTag(family)).toBe('');
   });
+
+  it('comma-joins every crowded band, closest first, singular "band"', () => {
+    const family = makeFamily(30, 5);
+    family.members[2].elements.a_km = 6_100; // Stanford LNCSS (0.70%) and ESA LCNS COM (1.67%)
+    expect(familyReferenceTag(family)).toBe('≈ Stanford LNCSS, ESA LCNS COM band');
+  });
 });

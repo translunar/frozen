@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AGENCY_REFERENCES, nearestReference } from './references';
+import { AGENCY_REFERENCES, nearestReference, referencesWithin } from './references';
 
 describe('AGENCY_REFERENCES', () => {
   it('covers all seven agency/proposal orbits', () => {
@@ -22,7 +22,7 @@ describe('nearestReference', () => {
     expect(nearestReference(3_870)?.name).toBe('JAXA demo');
   });
 
-  it('accepts within the default 3% tolerance', () => {
+  it('accepts within the default 4% tolerance', () => {
     // 6541.4 * 1.02 = 6672.2 (2% high) -> still matches JAXA LNSS
     expect(nearestReference(6541.4 * 1.02)?.name).toBe('JAXA LNSS');
   });
@@ -46,5 +46,38 @@ describe('nearestReference', () => {
     const fracStanford = Math.abs(target - 6_143) / 6_143;
     const expected = fracCom < fracStanford ? 'ESA LCNS COM' : 'Stanford LNCSS';
     expect(nearestReference(target, 0.02)?.name).toBe(expected);
+  });
+
+  it('N=60 (a≈5,765) now matches ESA LCNS COM under the bumped 4% default, not Stanford', () => {
+    // ESA LCNS COM: |5765-6000|/6000 = 3.92% (within 4%, was missed at the old 3% default).
+    // Stanford LNCSS: |5765-6143|/6143 = 6.15% (still out of range).
+    expect(nearestReference(5_765)?.name).toBe('ESA LCNS COM');
+  });
+});
+
+describe('referencesWithin', () => {
+  it('returns every reference within tolerance, closest first', () => {
+    // a≈6,100: Stanford LNCSS (6,143) is 0.70% away, ESA LCNS COM (6,000) is 1.67% away —
+    // both within the default 4% tolerance, Stanford first.
+    const names = referencesWithin(6_100).map((r) => r.name);
+    expect(names).toEqual(['Stanford LNCSS', 'ESA LCNS COM']);
+  });
+
+  it('is [] when nothing is within tolerance', () => {
+    expect(referencesWithin(50_000)).toEqual([]);
+  });
+
+  it('is a single-element array for an isolated exact hit', () => {
+    expect(referencesWithin(11_315.9).map((r) => r.name)).toEqual(['NASA LCRNS']);
+  });
+
+  it('respects a custom tolFrac', () => {
+    expect(referencesWithin(6_100, 0.005)).toEqual([]); // both bands out of a 0.5% tolerance
+    expect(referencesWithin(6_100, 0.02).map((r) => r.name)).toEqual(['Stanford LNCSS', 'ESA LCNS COM']);
+  });
+
+  it('nearestReference is just its first match', () => {
+    expect(nearestReference(6_100)).toEqual(referencesWithin(6_100)[0]);
+    expect(nearestReference(50_000)).toBeNull();
   });
 });

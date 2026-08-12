@@ -1,6 +1,6 @@
 import { mountAnimControls } from '../anim';
 import type { AnimControls } from '../anim';
-import { nearestReference } from '../references';
+import { referencesWithin } from '../references';
 import { MOON_RADIUS_KM } from '../scene';
 import type { PresetName } from '../scene';
 import {
@@ -94,16 +94,19 @@ export function familyDualClockLabel(family: Family): string {
   return badge ? `${base} ${badge}` : base;
 }
 
+const REFERENCE_TAG_CAP = 3;
+
 /**
- * Tiny muted tag for a family whose mid-member semi-major axis lands within an agency
- * reference orbit's band (default 3%), e.g. `≈ IM Khonstellation band`. '' when no reference
- * is that close.
+ * Tiny muted tag for a family whose mid-member semi-major axis lands within one or more
+ * agency reference orbits' bands (default tolerance), e.g. `≈ IM Khonstellation band` or, when
+ * two bands crowd the same neighborhood, `≈ Stanford LNCSS, ESA LCNS COM band` (closest
+ * first, capped at 3, singular "band" regardless of match count). '' when nothing is that close.
  */
 export function familyReferenceTag(family: Family): string {
   const mid = family.members[Math.floor(family.members.length / 2)];
   if (!mid) return '';
-  const ref = nearestReference(mid.elements.a_km);
-  return ref ? `≈ ${ref.name} band` : '';
+  const matches = referencesWithin(mid.elements.a_km).slice(0, REFERENCE_TAG_CAP);
+  return matches.length > 0 ? `≈ ${matches.map((r) => r.name).join(', ')} band` : '';
 }
 
 export interface LeftRailHooks {

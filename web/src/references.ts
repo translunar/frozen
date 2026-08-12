@@ -28,16 +28,20 @@ export const AGENCY_REFERENCES: AgencyReference[] = [
   { name: 'JAXA demo', a_km: 3_870, period_h: 6.0, note: '' },
 ];
 
+/**
+ * Every reference within `tolFrac` fractional distance of `aKm`, closest first. A band like
+ * a≈6,100 km sits close to both ESA LCNS COM (6,000) and Stanford LNCSS (6,143) — callers that
+ * only want the single closest match should not silently drop the other.
+ */
+export function referencesWithin(aKm: number, tolFrac = 0.04): AgencyReference[] {
+  return AGENCY_REFERENCES
+    .map((ref) => ({ ref, frac: Math.abs(aKm - ref.a_km) / ref.a_km }))
+    .filter(({ frac }) => frac <= tolFrac)
+    .sort((a, b) => a.frac - b.frac)
+    .map(({ ref }) => ref);
+}
+
 /** The reference whose a_km is closest to `aKm`, if within `tolFrac` fractional distance. */
-export function nearestReference(aKm: number, tolFrac = 0.03): AgencyReference | null {
-  let best: AgencyReference | null = null;
-  let bestFrac = Infinity;
-  for (const ref of AGENCY_REFERENCES) {
-    const frac = Math.abs(aKm - ref.a_km) / ref.a_km;
-    if (frac < bestFrac) {
-      bestFrac = frac;
-      best = ref;
-    }
-  }
-  return best && bestFrac <= tolFrac ? best : null;
+export function nearestReference(aKm: number, tolFrac = 0.04): AgencyReference | null {
+  return referencesWithin(aKm, tolFrac)[0] ?? null;
 }
