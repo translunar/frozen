@@ -2,10 +2,13 @@ import './style.css';
 import { advanceTime, createLoop, createSatellite, SPEED_DEFAULT } from './anim';
 import { familyPreview, loadCatalog, memberTrajectory, prefetchNeighbors } from './data';
 import { createStage } from './scene';
-import { comboById, createStore, familyByN } from './state';
+import {
+  comboById, createStore, familyByN, findCombo, flipTerm,
+  nearestMemberIndex, nearestResonance, termAvailability,
+} from './state';
 import { mountLeftRail } from './ui/leftRail';
 import { mountStabilityPlot } from './ui/stabilityPlot';
-import type { Family, Terms } from './types';
+import type { Combo, Family, Terms } from './types';
 
 const CATALOG_BASE = 'catalog';
 
@@ -13,6 +16,7 @@ async function boot(): Promise<void> {
   const catalog = await loadCatalog(CATALOG_BASE);
   const combo0 = catalog.combos[0];
   const family0 = combo0.families[0];
+
   const store = createStore({
     comboId: combo0.id,
     familyN: family0.resonance_n,
@@ -28,11 +32,15 @@ async function boot(): Promise<void> {
   stage.scene.add(satellite.group);
   const plot = mountStabilityPlot(document.getElementById('plot') as HTMLElement, store);
 
+  const currentCombo = (): Combo => comboById(catalog, store.get().comboId) ?? catalog.combos[0];
+  const currentFamily = (): Family => {
+    const combo = currentCombo();
+    return familyByN(combo, store.get().familyN) ?? combo.families[0];
+  };
+
   const rail = mountLeftRail(document.getElementById('rail') as HTMLElement, store, catalog, {
-    // Task 21 replaces this with termAvailability(catalog, currentCombo().terms).
-    availability: (): Record<keyof Terms, boolean> =>
-      ({ j2: false, c22: false, j3: false, earth: false }),
-    onToggle: () => undefined,
+    availability: () => termAvailability(catalog, currentCombo().terms),
+    onToggle: (term) => toggleTerm(term),
     onPinGhost: () => {
       const s = store.get();
       store.update({ ghost: { comboId: s.comboId, familyN: s.familyN, memberIndex: s.memberIndex } });
@@ -42,10 +50,41 @@ async function boot(): Promise<void> {
     onGraticule: (visible) => stage.setGraticule(visible),
   });
 
-  const currentFamily = (): Family => {
-    const combo = comboById(catalog, store.get().comboId) ?? catalog.combos[0];
-    return familyByN(combo, store.get().familyN) ?? combo.families[0];
-  };
+  /** Toggle one force term: swap combos, carry the family and member across. */
+  function toggleTerm(term: keyof Terms): void {
+    const from = currentCombo();
+    const target = findCombo(catalog, flipTerm(from.terms, term));
+    if (!target) {
+      rail.refresh(); // defensive: the checkbox should have been disabled
+      return;
+    }
+    const fromFamily = currentFamily();
+    const wantN = fromFamily.resonance_n;
+
+    let toFamily = familyByN(target, wantN);
+    if (toFamily) {
+      rail.setNotice('');
+    } else {
+      const n = nearestResonance(target, wantN);
+      if (n === null) {
+        rail.setNotice(`${target.name} has no frozen families in the catalog`);
+        rail.refresh();
+        return;
+      }
+      toFamily = familyByN(target, n) as Family;
+      rail.setNotice(`No frozen N=${wantN} family in ${target.name} — showing N=${n}`);
+    }
+
+    const memberIndex = nearestMemberIndex(
+      store.get().memberIndex, fromFamily.members.length, toFamily.members.length,
+    );
+    store.update({
+      comboId: target.id,
+      familyN: toFamily.resonance_n,
+      memberIndex,
+      animTime: 0,
+    });
+  }
 
   let generation = 0;
   async function refreshAll(): Promise<void> {
@@ -53,28 +92,47 @@ async function boot(): Promise<void> {
     const family = currentFamily();
     const idx = Math.min(Math.max(0, store.get().memberIndex), family.members.length - 1);
     const member = family.members[idx];
+
     plot.setFamily(family);
     stage.setFrameRadiusKm(member.r_apo_km);
     const [loops, traj] = await Promise.all([
       familyPreview(CATALOG_BASE, family),
       memberTrajectory(CATALOG_BASE, member),
     ]);
-    if (gen !== generation) return;
+    if (gen !== generation) return; // a newer selection won the race
     stage.setFamilyStack(loops);
     stage.setSelected(traj);
     satellite.setMember(traj, member.period_s, family.resonance_n);
     prefetchNeighbors(CATALOG_BASE, family, idx);
   }
 
+  let ghostKey = '';
+  async function refreshGhost(): Promise<void> {
+    const g = store.get().ghost;
+    const key = g ? `${g.comboId}/${g.familyN}/${g.memberIndex}` : '';
+    if (key === ghostKey) return;
+    ghostKey = key;
+    if (!g) {
+      stage.setGhost(null);
+      return;
+    }
+    const combo = comboById(catalog, g.comboId);
+    const family = combo ? familyByN(combo, g.familyN) : undefined;
+    const member = family?.members[g.memberIndex];
+    stage.setGhost(member ? await memberTrajectory(CATALOG_BASE, member) : null);
+  }
+
   store.subscribe((s, p) => {
     if (s.comboId !== p.comboId || s.familyN !== p.familyN || s.memberIndex !== p.memberIndex) {
       void refreshAll();
     }
+    if (s.ghost !== p.ghost) void refreshGhost();
   });
+
   await refreshAll();
   stage.applyPreset('south-pole');
-
   window.addEventListener('resize', () => stage.resize());
+
   createLoop((dtWall) => {
     const s = store.get();
     const family = currentFamily();

@@ -1,4 +1,4 @@
-import type { Catalog, Combo, Family } from './types';
+import type { Catalog, Combo, Family, Terms } from './types';
 
 export interface GhostPin {
   comboId: string;
@@ -88,4 +88,38 @@ export function comboById(catalog: Catalog, id: string): Combo | undefined {
 
 export function familyByN(combo: Combo, n: number): Family | undefined {
   return combo.families.find((f) => f.resonance_n === n);
+}
+
+/** A new toggle state with exactly one force term inverted. */
+export function flipTerm(terms: Terms, term: keyof Terms): Terms {
+  return { ...terms, [term]: !terms[term] };
+}
+
+/** The catalogued combo whose four active terms match exactly, if any. */
+export function findCombo(catalog: Catalog, terms: Terms): Combo | undefined {
+  return catalog.combos.find(
+    (c) => c.terms.j2 === terms.j2 && c.terms.c22 === terms.c22
+      && c.terms.j3 === terms.j3 && c.terms.earth === terms.earth,
+  );
+}
+
+/**
+ * Per term: is the combo you would land on by flipping it present in the catalog?
+ * Terms that fail this render as disabled checkboxes titled "not in catalog".
+ */
+export function termAvailability(catalog: Catalog, terms: Terms): Record<keyof Terms, boolean> {
+  const keys: Array<keyof Terms> = ['j2', 'c22', 'j3', 'earth'];
+  const out = {} as Record<keyof Terms, boolean>;
+  for (const k of keys) out[k] = findCombo(catalog, flipTerm(terms, k)) !== undefined;
+  return out;
+}
+
+/** Closest resonance actually present in a combo, or null when it has no families. */
+export function nearestResonance(combo: Combo, n: number): number | null {
+  if (combo.families.length === 0) return null;
+  let best = combo.families[0];
+  for (const f of combo.families) {
+    if (Math.abs(f.resonance_n - n) < Math.abs(best.resonance_n - n)) best = f;
+  }
+  return best.resonance_n;
 }
