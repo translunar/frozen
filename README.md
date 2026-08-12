@@ -62,9 +62,9 @@ Generated catalog data is git-ignored; only the generator configs are committed.
 - **Families / Member** — pick a resonance, then scrub the member slider. All members
   of the family are drawn as translucent blue loops; the selected one is solid amber.
   Across `full`, `no-c22`, and `no-j3`, families exist at resonances N = 20, 25, 30,
-  35, 40, 60 (41 members each); N = 45, 50, 70 are absent from all three — the
-  continuation's corrector stalls there rather than finding a periodic solution, a
-  solver/physics result recorded as an absence, not a bug.
+  35, 40, 60 (~81 members each, spanning a wide periapsis-altitude range); N = 45, 50,
+  70 are absent from all three — the continuation's corrector stalls there rather than
+  finding a periodic solution, a solver/physics result recorded as an absence, not a bug.
 - **Pin ghost** — freezes the current orbit as a gray copy so you can toggle a term
   and see the deformation by direct comparison.
 - **Animation** — play/pause, log speed dial from 1 min/s to 10 d/s, satellite marker

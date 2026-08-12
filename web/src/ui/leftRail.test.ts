@@ -10,7 +10,7 @@ describe('formatReadout', () => {
     const get = (label: string) => rows.find((r) => r.label === label)?.value;
     expect(get('a')).toBe('6000 km');
     expect(get('e')).toBe('0.6000');
-    expect(get('i')).toBe('57.00°');
+    expect(get('i (EM plane)')).toBe('57.00°');
     expect(get('period')).toBe('27.322 d');
     expect(get('revs')).toBe('25');
     expect(get('peri alt')).toBe('663 km');   // 2400 − 1737.4 km

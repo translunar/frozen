@@ -8,6 +8,7 @@ import {
 } from './state';
 import { mountBottomPanel } from './ui/bottomTabs';
 import { mountLeftRail } from './ui/leftRail';
+import { mountOrbitOverlay } from './ui/overlay';
 import type { Combo, Family, Terms } from './types';
 
 const CATALOG_BASE = 'catalog';
@@ -35,10 +36,12 @@ async function boot(): Promise<void> {
     ghost: null,
   });
 
-  const stage = createStage(document.getElementById('stage') as HTMLElement);
+  const stageEl = document.getElementById('stage') as HTMLElement;
+  const stage = createStage(stageEl);
   const satellite = createSatellite();
   stage.scene.add(satellite.group);
   const bottom = mountBottomPanel(document.getElementById('plot') as HTMLElement, store);
+  const overlay = mountOrbitOverlay(stageEl);
 
   const currentCombo = (): Combo => comboById(catalog, store.get().comboId) ?? combo0;
   const currentFamily = (): Family => {
@@ -116,6 +119,7 @@ async function boot(): Promise<void> {
     stage.setSelected(traj);
     satellite.setMember(traj, member.period_s, family.resonance_n);
     bottom.setMember(traj, member);
+    overlay.setSelected(member, family.resonance_n);
     prefetchNeighbors(CATALOG_BASE, family, idx);
   }
 
@@ -127,12 +131,14 @@ async function boot(): Promise<void> {
     ghostKey = key;
     if (!g) {
       stage.setGhost(null);
+      overlay.setGhost(null, null);
       return;
     }
     const combo = comboById(catalog, g.comboId);
     const family = combo ? familyByN(combo, g.familyN) : undefined;
     const member = family?.members[g.memberIndex];
     stage.setGhost(member ? await memberTrajectory(CATALOG_BASE, member) : null);
+    overlay.setGhost(member ?? null, family ? family.resonance_n : null);
   }
 
   store.subscribe((s, p) => {

@@ -18,7 +18,7 @@ export function formatReadout(member: Member, family: Family): Array<{ label: st
   return [
     { label: 'a', value: `${e.a_km.toFixed(0)} km` },
     { label: 'e', value: e.e.toFixed(4) },
-    { label: 'i', value: `${e.i_deg.toFixed(2)}°` },
+    { label: 'i (EM plane)', value: `${e.i_deg.toFixed(2)}°` },
     { label: 'ω', value: `${e.omega_deg.toFixed(2)}°` },
     { label: 'Ω', value: `${e.raan_deg.toFixed(2)}°` },
     { label: 'period', value: `${(member.period_s / 86_400).toFixed(3)} d` },

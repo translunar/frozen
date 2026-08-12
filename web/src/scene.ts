@@ -49,9 +49,10 @@ export interface Stage {
 const STACK_COLOR = 0x3a6a96;
 const SELECTED_COLOR = 0xffc24a;
 const GHOST_COLOR = 0x777777;
-// Draw the selected loop on top of the (much more numerous, alpha-blended) family stack —
-// three.js doesn't order same-material transparent draws by anything but insertion/renderOrder,
-// so without this the amber loop can be visually buried under overlapping stack lines.
+// The selected material is opaque (not transparent like the stack/ghost), so three.js already
+// draws it before the transparent stack regardless of renderOrder — the opaque bucket renders
+// in full ahead of the transparent one. This renderOrder is therefore harmless but not load-
+// bearing; kept in case the selected material ever becomes transparent too.
 const SELECTED_RENDER_ORDER = 1;
 
 function makeLoop(
