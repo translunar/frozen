@@ -11,7 +11,7 @@ swaps the family in place, answering "which terms hold this orbit together?"
 |---|---|
 | `crates/elfo-core` | Dynamics, DP54 integrator with STM, multiple-shooting corrector, pseudo-arclength continuation, monodromy stability indices |
 | `crates/elfo-catalog` | CLI that sweeps force-model combos × resonances and writes the catalog |
-| `catalog.toml` | The real generation config (4 combos, 9 resonances) |
+| `catalog.toml` | The real generation config (4 combos, 13 resonances) |
 | `web/` | Vite + TypeScript + three.js cockpit (no framework, no WASM) |
 | `web/dev-catalog.toml` | Small config for a fast development catalog |
 
@@ -19,7 +19,9 @@ Physics: Moon-centered Earth-Moon rotating frame, ω = 1 nondimensional, Earth f
 at −x. Force terms J2, C22, J3 (closed form, static in this frame) and the Earth as
 a point-mass third body, each individually toggleable. Frozen orbits are periodic
 orbits found by differential correction and continued into families; each family is
-labeled by its resonance N (revolutions per closure).
+labeled by its resonance N (revolutions per closure). Continuation runs to ±40
+members per seed at a step size ds0 = 2e-2, so families span wide periapsis-altitude
+ranges rather than a narrow neighborhood around the seed solution.
 
 ## Quickstart
 

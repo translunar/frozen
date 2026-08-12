@@ -99,3 +99,32 @@ html, body {
   cursor: pointer;
 }
 .metric-select:hover { border-color: #2b3a50; }
+
+.bottom-panel { display: flex; flex-direction: column; height: 100%; }
+.tab-bar { display: flex; gap: 4px; padding: 6px 12px 0; flex: 0 0 auto; }
+.tab-btn {
+  background: #0c1119; color: #7b8a9d;
+  border: 1px solid #1e2938; border-bottom: none;
+  border-radius: 5px 5px 0 0; padding: 4px 14px;
+  font: 11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+.tab-btn:hover { color: #b9c6d6; }
+.tab-btn.active { background: #141b26; color: #ffc24a; border-color: #3d5271; }
+.tab-pane { flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; }
+
+.groundtrack-svg, .skyview-svg { display: block; width: 100%; height: 100%; }
+.groundtrack-svg .grat        { stroke: #1e2938; stroke-width: 1; }
+.groundtrack-svg .track-line  { fill: none; stroke: #4fd1c5; stroke-width: 1.5; }
+.groundtrack-svg .subearth-dot { fill: #ffc24a; }
+.groundtrack-svg .label       { fill: #ffc24a; font-size: 10px; }
+.groundtrack-svg .tick        { fill: #5d6d80; font-size: 10px; }
+.groundtrack-svg .anim-marker { fill: #ffffff; stroke: #05070d; stroke-width: 1; }
+
+.skyview-svg .moon-disk    { fill: #9a9a9a; opacity: 0.18; }
+.skyview-svg .sky-clear    { fill: none; stroke: #4fd1c5; stroke-width: 1.5; }
+.skyview-svg .sky-transit  { fill: none; stroke: #e0a83a; stroke-width: 1.5; }
+.skyview-svg .sky-occulted { fill: none; stroke: #c74a4a; stroke-width: 1.5; stroke-dasharray: 3 3; opacity: 0.5; }
+.skyview-svg .tick    { fill: #5d6d80; font-size: 10px; }
+.skyview-svg .legend  { fill: #9fb0c4; font-size: 10px; }
+.skyview-svg .anim-marker { fill: #ffffff; stroke: #05070d; stroke-width: 1; }

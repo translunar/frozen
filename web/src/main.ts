@@ -6,8 +6,8 @@ import {
   comboById, createStore, familyByN, findCombo, flipTerm,
   nearestMemberIndex, nearestResonance, termAvailability,
 } from './state';
+import { mountBottomPanel } from './ui/bottomTabs';
 import { mountLeftRail } from './ui/leftRail';
-import { mountStabilityPlot } from './ui/stabilityPlot';
 import type { Combo, Family, Terms } from './types';
 
 const CATALOG_BASE = 'catalog';
@@ -38,7 +38,7 @@ async function boot(): Promise<void> {
   const stage = createStage(document.getElementById('stage') as HTMLElement);
   const satellite = createSatellite();
   stage.scene.add(satellite.group);
-  const plot = mountStabilityPlot(document.getElementById('plot') as HTMLElement, store);
+  const bottom = mountBottomPanel(document.getElementById('plot') as HTMLElement, store);
 
   const currentCombo = (): Combo => comboById(catalog, store.get().comboId) ?? combo0;
   const currentFamily = (): Family => {
@@ -105,7 +105,7 @@ async function boot(): Promise<void> {
     const idx = Math.min(Math.max(0, store.get().memberIndex), family.members.length - 1);
     const member = family.members[idx];
 
-    plot.setFamily(family);
+    bottom.setFamily(family);
     stage.setFrameRadiusKm(member.r_apo_km);
     const [loops, traj] = await Promise.all([
       familyPreview(CATALOG_BASE, family),
@@ -115,6 +115,7 @@ async function boot(): Promise<void> {
     stage.setFamilyStack(loops);
     stage.setSelected(traj);
     satellite.setMember(traj, member.period_s, family.resonance_n);
+    bottom.setMember(traj, member);
     prefetchNeighbors(CATALOG_BASE, family, idx);
   }
 
@@ -154,6 +155,7 @@ async function boot(): Promise<void> {
     }
     const info = satellite.update(store.get().animTime);
     if (info) rail.anim.setReadout(info.days, info.revs, family.resonance_n);
+    bottom.setAnimTime(store.get().animTime);
     stage.render();
   }).start();
 }

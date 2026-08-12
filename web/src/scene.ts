@@ -45,14 +45,23 @@ export interface Stage {
   resize(): void;
 }
 
-const STACK_COLOR = 0x63b8ff;
+// Cooler, dimmer than the amber-selected member so the stack reads as unselected context.
+const STACK_COLOR = 0x3a6a96;
 const SELECTED_COLOR = 0xffc24a;
 const GHOST_COLOR = 0x777777;
+// Draw the selected loop on top of the (much more numerous, alpha-blended) family stack —
+// three.js doesn't order same-material transparent draws by anything but insertion/renderOrder,
+// so without this the amber loop can be visually buried under overlapping stack lines.
+const SELECTED_RENDER_ORDER = 1;
 
-function makeLoop(xyzKm: Float32Array, material: THREE.LineBasicMaterial): THREE.LineLoop {
+function makeLoop(
+  xyzKm: Float32Array, material: THREE.LineBasicMaterial, renderOrder = 0,
+): THREE.LineLoop {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(scenePositions(xyzKm), 3));
-  return new THREE.LineLoop(geo, material);
+  const loop = new THREE.LineLoop(geo, material);
+  loop.renderOrder = renderOrder;
+  return loop;
 }
 
 function clearGroup(group: THREE.Group): void {
@@ -175,7 +184,7 @@ export function createStage(container: HTMLElement): Stage {
   ));
 
   // --- Orbit layers -----------------------------------------------------
-  const stackMat = new THREE.LineBasicMaterial({ color: STACK_COLOR, transparent: true, opacity: 0.15 });
+  const stackMat = new THREE.LineBasicMaterial({ color: STACK_COLOR, transparent: true, opacity: 0.06 });
   const selectedMat = new THREE.LineBasicMaterial({ color: SELECTED_COLOR });
   const ghostMat = new THREE.LineBasicMaterial({ color: GHOST_COLOR, transparent: true, opacity: 0.85 });
   const stack = new THREE.Group();
@@ -197,7 +206,7 @@ export function createStage(container: HTMLElement): Stage {
     },
     setSelected(traj) {
       clearGroup(selected);
-      if (traj) selected.add(makeLoop(traj, selectedMat));
+      if (traj) selected.add(makeLoop(traj, selectedMat, SELECTED_RENDER_ORDER));
     },
     setGhost(traj) {
       clearGroup(ghost);
