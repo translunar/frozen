@@ -988,7 +988,8 @@ mod tests {
         let vc = (MU_MOON_ND / x0).sqrt();
         let seed = [x0, 0.0, 0.0, 0.0, -(vc + x0), 0.0]; // retrograde in rotating frame
         let t0 = std::f64::consts::TAU / (vc / x0 + 1.0);
-        let nodes = seed_nodes(&fm, &seed, t0, 3);
+        // m=4: empirically required — m=3 stalls at residual ~0.021 for this seed
+        let nodes = seed_nodes(&fm, &seed, t0, 4);
         let orbit = correct(&fm, &nodes, t0, &Constraint::None).expect("DRO should converge");
         assert!(orbit.residual < 1e-10);
         assert!((orbit.period - t0).abs() < 0.2 * t0);
@@ -1197,7 +1198,7 @@ mod tests {
         let x0 = 0.04; let vc = (MU_MOON_ND / x0).sqrt();
         let dro_seed = [x0, 0.0, 0.0, 0.0, -(vc + x0), 0.0];
         let t0 = std::f64::consts::TAU / (vc / x0 + 1.0);
-        let dro = correct(&cr3bp(), &seed_nodes(&cr3bp(), &dro_seed, t0, 3), t0,
+        let dro = correct(&cr3bp(), &seed_nodes(&cr3bp(), &dro_seed, t0, 4), t0,
             &Constraint::None).unwrap();
         let m_dro = monodromy(&dro);
         assert!((m_dro.determinant() - 1.0).abs() < 1e-6, "det = {}", m_dro.determinant());
