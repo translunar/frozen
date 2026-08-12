@@ -116,6 +116,37 @@ impl ForceModel {
     pub fn energy(&self, s: &[f64;6]) -> f64 {
         0.5*(s[3]*s[3]+s[4]*s[4]+s[5]*s[5]) - self.omega_eff(&[s[0],s[1],s[2]])
     }
+
+    /// G(d) for a point mass μ at offset such that accel = −μ d/|d|³:
+    /// ∂a/∂r = μ (3 d dᵀ/|d|⁵ − I/|d|³)
+    fn point_mass_grad(mu: f64, d: &[f64;3]) -> [[f64;3];3] {
+        let n2 = d[0]*d[0]+d[1]*d[1]+d[2]*d[2];
+        let n5 = n2 * n2 * n2.sqrt();
+        let n3 = n2 * n2.sqrt();
+        let mut g = [[0.0;3];3];
+        for i in 0..3 { for j in 0..3 {
+            g[i][j] = mu * 3.0 * d[i]*d[j] / n5 - if i == j { mu / n3 } else { 0.0 };
+        }}
+        g
+    }
+
+    pub fn accel_jacobian(&self, s: &[f64;6]) -> [[f64;6];6] {
+        let r = [s[0], s[1], s[2]];
+        let mut g = Self::point_mass_grad(MU_MOON_ND, &r);
+        if self.earth {
+            let d = [r[0]+1.0, r[1], r[2]];
+            let ge = Self::point_mass_grad(MU_EARTH_ND, &d);
+            for i in 0..3 { for j in 0..3 { g[i][j] += ge[i][j]; } }
+        }
+        let hh = terms_hess(&self.harmonics(), &r);
+        for i in 0..3 { for j in 0..3 { g[i][j] += hh[i][j]; } }
+        g[0][0] += 1.0; g[1][1] += 1.0; // centrifugal diag(1,1,0)
+        let mut a = [[0.0;6];6];
+        for k in 0..3 { a[k][k+3] = 1.0; }
+        for i in 0..3 { for j in 0..3 { a[i+3][j] = g[i][j]; } }
+        a[3][4] = 2.0; a[4][3] = -2.0; // Coriolis
+        a
+    }
 }
 
 #[cfg(test)]
@@ -186,5 +217,26 @@ mod force_tests {
         let inside  = fm.accel(&[-0.05, 0.0, 0.0, 0.0, 0.0, 0.0]);
         let outside = fm.accel(&[-0.40, 0.0, 0.0, 0.0, 0.0, 0.0]);
         assert!(inside[0] > 0.0 && outside[0] < 0.0);
+    }
+}
+
+#[cfg(test)]
+mod jac_tests {
+    use super::*;
+    #[test]
+    fn jacobian_matches_finite_differences() {
+        let fm = ForceModel { j2: true, c22: true, j3: true, earth: true };
+        let s = [0.018, -0.012, 0.015, 0.05, -0.2, 0.1];
+        let a = fm.accel_jacobian(&s);
+        let h = 1e-7;
+        for col in 0..6 {
+            let (mut sp, mut sm) = (s, s); sp[col] += h; sm[col] -= h;
+            let (fp, fm_) = (fm.eom(&sp), fm.eom(&sm));
+            for row in 0..6 {
+                let fd = (fp[row] - fm_[row]) / (2.0 * h);
+                assert!((a[row][col] - fd).abs() < (1e-5 * fd.abs()).max(2e-6),
+                    "row {row} col {col}: {} vs {}", a[row][col], fd);
+            }
+        }
     }
 }
