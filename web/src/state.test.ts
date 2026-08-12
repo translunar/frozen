@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
-  comboById, createStore, elapsedRevs, familyByN,
-  librationPeriodMonths, nearestMemberIndex, samplePosition, stabilityMargin, symlog,
-  trailingWindowIndices, windingAngleDeg,
+  comboById, createStore, displayOrder, elapsedRevs, energyNd, familyByN, formatRevs,
+  hydrateUIState, librationPeriodMonths, nearestMemberIndex, nearestMemberIndexByRank,
+  nearestRational, resonanceBadge, samplePosition, sidRevsPerClosure, stabilityMargin, symlog,
+  synodicRevs, trailingWindowIndices, windingAngleDeg,
 } from './state';
-import type { AppState } from './state';
-import { makeCatalog } from './testFixtures';
+import type { AppState, PersistedUIState } from './state';
+import { makeCatalog, makeFamily } from './testFixtures';
+import type { Terms } from './types';
 
 const INITIAL: AppState = {
   comboId: 'full', familyN: 25, memberIndex: 0,
   animTime: 0, playing: false, speed: 21600, ghost: null,
+  metric: 'winding', xAxis: 'hp',
 };
 
 describe('symlog', () => {
@@ -76,6 +79,69 @@ describe('nearestMemberIndex', () => {
   });
 });
 
+describe('displayOrder', () => {
+  it('reorders member indices so periapsis altitude reads ascending', () => {
+    // A zigzagging continuation walk: r_peri_km goes 2400, 2200, 2600, 2300 across indices 0..3.
+    const family = makeFamily(25, 4);
+    family.members[0].r_peri_km = 2400;
+    family.members[1].r_peri_km = 2200;
+    family.members[2].r_peri_km = 2600;
+    family.members[3].r_peri_km = 2300;
+    // Ascending r_peri_km order: 2200(1), 2300(3), 2400(0), 2600(2).
+    expect(displayOrder(family)).toEqual([1, 3, 0, 2]);
+  });
+
+  it('breaks ties by index, keeping a stable result', () => {
+    const family = makeFamily(25, 3);
+    family.members[0].r_peri_km = 2400;
+    family.members[1].r_peri_km = 2400;
+    family.members[2].r_peri_km = 2200;
+    expect(displayOrder(family)).toEqual([2, 0, 1]);
+  });
+
+  it('is the identity permutation for an already-ascending family', () => {
+    const family = makeFamily(25, 3);
+    family.members[0].r_peri_km = 2200;
+    family.members[1].r_peri_km = 2400;
+    family.members[2].r_peri_km = 2600;
+    expect(displayOrder(family)).toEqual([0, 1, 2]);
+  });
+
+  it('handles a single-member family', () => {
+    expect(displayOrder(makeFamily(25, 1))).toEqual([0]);
+  });
+});
+
+describe('nearestMemberIndexByRank', () => {
+  it('carries a raw index over via its RANK in display order, not the raw index itself', () => {
+    // from: r_peri_km zigzags 2400,2200,2600,2300 -> order [1,3,0,2]; raw index 0 is rank 2.
+    const from = makeFamily(25, 4);
+    from.members[0].r_peri_km = 2400;
+    from.members[1].r_peri_km = 2200;
+    from.members[2].r_peri_km = 2600;
+    from.members[3].r_peri_km = 2300;
+    // to: already ascending, same length -> order [0,1,2,3]; rank 2 -> raw index 2.
+    const to = makeFamily(30, 4);
+    to.members[0].r_peri_km = 100;
+    to.members[1].r_peri_km = 200;
+    to.members[2].r_peri_km = 300;
+    to.members[3].r_peri_km = 400;
+    expect(nearestMemberIndexByRank(0, from, to)).toBe(2);
+  });
+
+  it('maps the family-minimum-hp member to the family-minimum-hp member across a length change', () => {
+    const from = makeFamily(25, 4); // ascending by construction (testFixtures default a_km, not hp)
+    from.members.forEach((m, i) => { m.r_peri_km = 2000 + i * 100; }); // ascending, order = identity
+    const to = makeFamily(30, 2);
+    to.members[0].r_peri_km = 500;
+    to.members[1].r_peri_km = 900;
+    // from index 0 (rank 0, the lowest hp) -> to rank 0 -> to's lowest-hp member, index 0.
+    expect(nearestMemberIndexByRank(0, from, to)).toBe(0);
+    // from index 3 (rank 3, the highest hp) -> to rank 1 -> to's highest-hp member, index 1.
+    expect(nearestMemberIndexByRank(3, from, to)).toBe(1);
+  });
+});
+
 describe('samplePosition', () => {
   // Four samples around a unit square, uniform over a period of 4; sample 3 wraps to sample 0.
   const square = new Float32Array([1, 0, 0, 0, 1, 0, -1, 0, 0, 0, -1, 0]);
@@ -138,6 +204,154 @@ describe('elapsedRevs', () => {
   it('counts revs as the resonance number scaled by period fraction', () => {
     expect(elapsedRevs(1180295.5, 2360591, 25)).toBeCloseTo(12.5, 9);
     expect(elapsedRevs(0, 2360591, 25)).toBe(0);
+  });
+});
+
+const SYNODIC_MONTH_S = 2_551_442.9;
+
+describe('sidRevsPerClosure', () => {
+  it('divides total revs by the closure count (74.5 for a 149:2 family)', () => {
+    expect(sidRevsPerClosure(149, 2)).toBeCloseTo(74.5, 12);
+    expect(sidRevsPerClosure(25, 1)).toBe(25);
+  });
+
+  it('is 0 for a degenerate (non-positive) closure count', () => {
+    expect(sidRevsPerClosure(149, 0)).toBe(0);
+  });
+});
+
+describe('formatRevs', () => {
+  it('prints whole numbers bare, no decimal', () => {
+    expect(formatRevs(25)).toBe('25');
+    expect(formatRevs(0)).toBe('0');
+  });
+
+  it('prints one decimal for a non-whole value', () => {
+    expect(formatRevs(74.5)).toBe('74.5');
+    expect(formatRevs(74.5000001)).toBe('74.5');
+  });
+});
+
+describe('synodicRevs', () => {
+  it('scales revs by the ratio of the synodic month to the full closure period', () => {
+    // 149 revs over a period of exactly one synodic month -> 149 rev/syn-mo.
+    expect(synodicRevs(149, SYNODIC_MONTH_S)).toBeCloseTo(149, 9);
+    // Half as long a period -> twice as many synodic months fit -> half the revs each.
+    expect(synodicRevs(149, SYNODIC_MONTH_S / 2)).toBeCloseTo(298, 9);
+  });
+
+  it('is 0 for a degenerate (non-positive) period', () => {
+    expect(synodicRevs(149, 0)).toBe(0);
+  });
+});
+
+describe('nearestRational', () => {
+  it('hand-checks exact and near-exact hits', () => {
+    expect(nearestRational(80.5, 4)).toEqual({ p: 161, q: 2, err: 0 });
+    expect(nearestRational(0.75, 4)).toEqual({ p: 3, q: 4, err: 0 });
+  });
+
+  it('picks the closest denominator by raw error, hand-checked against 54.64', () => {
+    // q=1: |54.64-55|=0.36; q=2: |54.64-54.5|=0.14; q=3: |54.64-164/3|=0.0267 (best);
+    // q=4: |54.64-54.75|=0.11.
+    const fit = nearestRational(54.64, 4);
+    expect(fit).toEqual({ p: 164, q: 3, err: expect.closeTo(0.026667, 5) });
+  });
+
+  it('is forced to q=1 when maxDen is 1', () => {
+    expect(nearestRational(74.5, 1)).toEqual({ p: 75, q: 1, err: 0.5 });
+  });
+});
+
+describe('resonanceBadge', () => {
+  it('formats a passing-gate badge with the residual in degrees, hand-checked to 149:2', () => {
+    // Construct a period so that 149 revs land at exactly 80.5 + 3/720 synodic months —
+    // engineered so nearestRational(x, 4) lands on 161:2 with a residual of exactly 3 deg:
+    // err = |x - 80.5| = 3/720, residual = err * q(=2) * 360 = 3.
+    const x = 80.5 + 3 / 720;
+    const periodS = (149 * SYNODIC_MONTH_S) / x;
+    expect(sidRevsPerClosure(149, 2)).toBeCloseTo(74.5, 9);
+    expect(synodicRevs(149, periodS)).toBeCloseTo(x, 6);
+    expect(resonanceBadge(synodicRevs(149, periodS))).toBe('≈161:2 syn (3°)');
+  });
+
+  it('rejects the folklore case (x=54.64 claimed as 109:2): residual is 100deg+', () => {
+    expect(resonanceBadge(54.64)).toBe('');
+  });
+
+  it('rejects when the best-fit residual still exceeds the gate', () => {
+    expect(resonanceBadge(80.5 + 3 / 720, 4, 2)).toBe(''); // 3deg residual > 2deg gate
+  });
+
+  it('accepts an exact hit with a 0deg residual', () => {
+    expect(resonanceBadge(74.5, 4)).toBe('≈149:2 syn (0°)');
+  });
+});
+
+describe('energyNd', () => {
+  // Controller-computed ground truth: state0 [0.02, 0, 0.01, 0, -0.6, 0.3].
+  const STATE0 = [0.02, 0, 0.01, 0, -0.6, 0.3];
+  const FULL: Terms = { j2: true, c22: true, j3: true, earth: true };
+
+  it('matches the controller-computed value for the full force model', () => {
+    expect(energyNd(STATE0, FULL)).toBeCloseTo(-1.794706268957019, 12);
+  });
+
+  it('matches the controller-computed value with earth off', () => {
+    expect(energyNd(STATE0, { ...FULL, earth: false })).toBeCloseTo(-0.318592767741606, 12);
+  });
+
+  it('matches the controller-computed value with c22 off', () => {
+    expect(energyNd(STATE0, { ...FULL, c22: false })).toBeCloseTo(-1.794705074039040, 12);
+  });
+});
+
+describe('hydrateUIState', () => {
+  const defaults: PersistedUIState = {
+    comboId: 'full', familyN: 25, memberIndex: 2, metric: 'winding', xAxis: 'hp',
+  };
+
+  it('returns defaults for a null raw value (nothing stored yet)', () => {
+    expect(hydrateUIState(null, defaults)).toEqual(defaults);
+  });
+
+  it('returns defaults for garbage (unparseable) JSON', () => {
+    expect(hydrateUIState('{not json', defaults)).toEqual(defaults);
+  });
+
+  it('returns defaults for valid JSON that is not an object (e.g. a bare number or array)', () => {
+    expect(hydrateUIState('42', defaults)).toEqual(defaults);
+    expect(hydrateUIState('[1,2,3]', defaults)).toEqual(defaults);
+    expect(hydrateUIState('null', defaults)).toEqual(defaults);
+  });
+
+  it('adopts a fully-populated, well-typed stored value', () => {
+    const stored: PersistedUIState = {
+      comboId: 'no-earth', familyN: 40, memberIndex: 1, metric: 'margin', xAxis: 'energy',
+    };
+    expect(hydrateUIState(JSON.stringify(stored), defaults)).toEqual(stored);
+  });
+
+  it('falls back per-field for a partial or wrong-typed stored object, not all-or-nothing', () => {
+    const stored = { comboId: 'no-earth', familyN: 'not a number', metric: 123, xAxis: 'energy' };
+    expect(hydrateUIState(JSON.stringify(stored), defaults)).toEqual({
+      comboId: 'no-earth',          // valid string -> adopted
+      familyN: defaults.familyN,    // wrong type -> default
+      memberIndex: defaults.memberIndex, // missing -> default
+      metric: defaults.metric,      // wrong type (number, not string) -> default
+      xAxis: 'energy',              // valid string -> adopted
+    });
+  });
+
+  it('rejects a negative or non-finite memberIndex', () => {
+    expect(hydrateUIState(JSON.stringify({ memberIndex: -1 }), defaults).memberIndex)
+      .toBe(defaults.memberIndex);
+    expect(hydrateUIState(JSON.stringify({ memberIndex: Infinity }), defaults).memberIndex)
+      .toBe(defaults.memberIndex);
+  });
+
+  it('rejects an empty-string field rather than adopting a blank value', () => {
+    expect(hydrateUIState(JSON.stringify({ comboId: '' }), defaults).comboId).toBe(defaults.comboId);
   });
 });
 

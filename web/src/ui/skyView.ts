@@ -150,7 +150,7 @@ export function mountSkyViewPanel(container: HTMLElement): SkyViewPanel {
     xScale = null;
     yScale = null;
     const w = container.clientWidth || 800;
-    const h = container.clientHeight || 210;
+    const h = container.clientHeight || 230;
     svg.setAttribute('width', String(w));
     svg.setAttribute('height', String(h));
     svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
@@ -195,11 +195,9 @@ export function mountSkyViewPanel(container: HTMLElement): SkyViewPanel {
       'axes ×10³ km',
     ));
 
-    const frac = occultedFraction(traj);
-    svg.appendChild(text(
-      { x: String(MARGIN.left + 4), y: String(MARGIN.top + 10), class: 'legend' },
-      `outage ${(frac * 100).toFixed(1)}% of period`,
-    ));
+    // Outage % moved to the pane header (bottomTabs.ts) — it's a single glanceable number
+    // that doesn't need its own SVG legend line, and the header saves vertical space in the
+    // now-always-visible three-pane layout.
 
     markerEl = el('circle', { cx: '0', cy: '0', r: '4', class: 'anim-marker' });
     svg.appendChild(markerEl);

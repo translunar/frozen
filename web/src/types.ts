@@ -26,9 +26,16 @@ export interface Member {
 
 export interface Family {
   resonance_n: number;
+  /** k in an M:k rational resonance (M = resonance_n revs per k node-regression periods). */
+  closures?: number;
   members: Member[];
   preview: string;         // path relative to the catalog root
   preview_counts: number[]; // points per member inside preview.f32
+}
+
+/** k in an M:k resonance; serde default (and thus the JS default) is 1 — a plain integer family. */
+export function familyClosures(f: Family): number {
+  return f.closures ?? 1;
 }
 
 export interface Combo {

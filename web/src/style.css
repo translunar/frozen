@@ -11,7 +11,7 @@ html, body {
 #app {
   display: grid;
   grid-template-columns: 320px 1fr;
-  grid-template-rows: 1fr 210px;
+  grid-template-rows: 1fr 230px;
   grid-template-areas:
     "rail stage"
     "plot plot";
@@ -61,6 +61,7 @@ html, body {
 .family-btn.active { background: #1d2b3f; color: #ffc24a; border-color: #3d5271; }
 .family-btn-main   { display: block; }
 .family-btn-sub    { display: block; font-size: 10px; color: #6f8299; margin-top: 2px; }
+.family-btn-dual   { display: block; font-size: 10px; color: #6f8299; margin-top: 1px; }
 
 #member-slider { width: 100%; }
 .endpoints {
@@ -102,28 +103,51 @@ html, body {
 .stability-svg .metric-dot  { fill: #ffc24a; opacity: 0.6; }
 .stability-svg .tick       { fill: #7b8a9d; font-size: 10px; }
 .stability-svg .legend     { fill: #5d6d80; font-size: 10px; }
+.stability-svg .legend-e0  { fill: #4a5768; font-size: 10px; }
+.stability-svg .axis-label { fill: #5d6d80; font-size: 10px; }
 
 .metric-select {
-  position: absolute; top: 8px; right: 18px; z-index: 2;
   background: #101725; color: #b9c6d6;
   border: 1px solid #1e2938; border-radius: 4px;
-  padding: 3px 6px; font: 11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  cursor: pointer;
+  padding: 2px 5px; font: 10px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  cursor: pointer; max-width: 100%;
 }
 .metric-select:hover { border-color: #2b3a50; }
 
-.bottom-panel { display: flex; flex-direction: column; height: 100%; }
-.tab-bar { display: flex; gap: 4px; padding: 6px 12px 0; flex: 0 0 auto; }
-.tab-btn {
-  background: #0c1119; color: #7b8a9d;
-  border: 1px solid #1e2938; border-bottom: none;
-  border-radius: 5px 5px 0 0; padding: 4px 14px;
-  font: 11px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  cursor: pointer;
+/* Three panes side by side, always visible — see bottomTabs.ts. Metrics and Moon track get
+   equal (and more) room; sky view is squarer and needs less width. */
+.bottom-panel {
+  display: grid; grid-template-columns: 1.2fr 1.2fr 0.8fr;
+  height: 100%; gap: 0;
 }
-.tab-btn:hover { color: #b9c6d6; }
-.tab-btn.active { background: #141b26; color: #ffc24a; border-color: #3d5271; }
-.tab-pane { flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; }
+.bpane {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  border-right: 1px solid #141b26;
+}
+.bpane:last-child { border-right: none; }
+.bpane-header {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+  flex: 0 0 auto; padding: 5px 10px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
+  color: #6f8299; cursor: pointer; user-select: none;
+  border-bottom: 1px solid #141b26;
+}
+.bpane-header:hover { color: #9fb0c4; }
+.bpane-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bpane-aside {
+  flex: 0 0 auto; text-transform: none; letter-spacing: normal;
+  font-size: 10px; font-variant-numeric: tabular-nums; color: #7b8a9d;
+}
+.bpane-body { flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; }
+
+/* Collapsed: grid column shrinks to a slim restore bar (width set inline by bottomTabs.ts);
+   the header rotates to read top-to-bottom and the body is removed from layout entirely. */
+.bpane.collapsed { border-right-color: #1e2938; }
+.bpane.collapsed .bpane-header {
+  writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
+  padding: 10px 4px; border-bottom: none; height: 100%; justify-content: flex-start;
+}
+.bpane.collapsed .bpane-aside { display: none; }
 
 .groundtrack-svg, .skyview-svg { display: block; width: 100%; height: 100%; }
 .groundtrack-svg .grat        { stroke: #1e2938; stroke-width: 1; }

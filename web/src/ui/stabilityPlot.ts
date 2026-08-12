@@ -1,17 +1,21 @@
 import { scaleLinear } from 'd3-scale';
-import type { ScaleLinear } from 'd3-scale';
 import { MOON_RADIUS_KM } from '../scene';
-import { librationPeriodMonths, stabilityMargin, symlog, windingAngleDeg } from '../state';
+import {
+  displayOrder, energyNd, librationPeriodMonths, stabilityMargin, symlog, windingAngleDeg,
+} from '../state';
 import type { Store } from '../state';
-import type { Family, Member } from '../types';
+import type { Family, Member, Terms } from '../types';
 
-// This strip is a family metric strip: an x-axis walking a family's members (an unlabeled
-// family parameter — sample position is downplayed, not enumerated) against a chosen metric
-// selectable in the top-right <select>. The file/export names stay `stabilityPlot` /
+// This strip is a family metric strip: an x-axis walking a family's members in *display
+// order* (see state.ts's displayOrder — periapsis-altitude-sorted, since the catalog's raw
+// continuation-walk order can zigzag/backtrack near a degenerate step), positioned by one of
+// several physically meaningful x-axis choices (periapsis/apoapsis altitude, eccentricity, or
+// nondim energy — selectable in a second top-right <select>). A chosen y-metric is selectable
+// in the first top-right <select>. The file/export names stay `stabilityPlot` /
 // `StabilityPlot` for API stability; only wording inside the module has moved on.
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const MARGIN = { top: 14, right: 18, bottom: 26, left: 48 };
+const MARGIN = { top: 14, right: 18, bottom: 46, left: 48 };
 
 /** Symmetric symlog y-range that always contains the ±1 stability boundary. */
 export function symlogDomain(nus: number[]): [number, number] {
@@ -61,6 +65,69 @@ export function indexFromX(px: number, plotWidth: number, count: number): number
   if (count <= 1) return 0;
   const f = Math.min(1, Math.max(0, px / plotWidth));
   return Math.round(f * (count - 1));
+}
+
+/** The rank whose value is closest to `target` (ties keep the earlier rank). Generic over any
+ * numeric series — used for both the energy and the periapsis/apoapsis/eccentricity axes. */
+export function memberIndexFromEnergy(values: number[], target: number): number {
+  if (values.length === 0) return 0;
+  let best = 0;
+  let bestDiff = Math.abs(values[0] - target);
+  for (let i = 1; i < values.length; i++) {
+    const diff = Math.abs(values[i] - target);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * `order`, reversed if needed, so `values` (indexed by true member index — one entry per
+ * `order` slot) has its two ENDPOINTS ascending left-to-right. Only the endpoints decide
+ * direction: the base order (periapsis-altitude-sorted) is never independently re-sorted by
+ * `values` itself, so an axis choice that moves in the opposite sense along the same
+ * hp-anchored walk (h_a often falls as h_p rises) still lands in a single global orientation
+ * rather than being resorted point-by-point, which would undo the zigzag fix `displayOrder`
+ * exists for.
+ *
+ * This is an endpoint-only guarantee, not global monotonicity: for an axis that isn't itself
+ * monotone in hp (energy is the case this matters for — "near-degenerate" is exactly this),
+ * the interior can still rise and fall locally even after orientation, because the walk order
+ * is always the hp-sorted one (or its reverse), never re-sorted by the chosen axis's own
+ * values. That's deliberate — re-sorting per-axis would reintroduce the near-duplicate/zigzag
+ * problem `displayOrder` exists to fix, just against a different variable.
+ */
+export function orientedOrder(order: number[], values: number[]): number[] {
+  if (order.length < 2) return order;
+  const first = values[order[0]];
+  const last = values[order[order.length - 1]];
+  return first <= last ? order : [...order].reverse();
+}
+
+/**
+ * Engineering-notation tick label for an energy value, expressed as an offset from the
+ * family-minimum energy E0: `E₀ + 3.2e-4` (or `E₀ − ...` below E0, `E₀` exactly at it). The
+ * energy span across a family is tiny relative to |E| ~ 1.8, so absolute values would print
+ * as indistinguishable digits — the offset is where the shape actually lives.
+ */
+export function formatEnergyOffset(offset: number): string {
+  if (offset === 0) return 'E₀';
+  const sign = offset > 0 ? '+' : '−';
+  return `E₀ ${sign} ${Math.abs(offset).toExponential(1)}`;
+}
+
+/** The `E₀ = ...` legend line noting the family-minimum energy the tick offsets are from. */
+export function energyLegendLabel(e0: number): string {
+  const sign = e0 < 0 ? '−' : '';
+  return `E₀ = ${sign}${Math.abs(e0).toFixed(5)}`;
+}
+
+/** X-axis tick count: thins from 4 to 2 when the pane is too narrow to fit four labels
+ * without overlap (the three-pane always-visible layout can leave this strip quite narrow). */
+export function xTickCount(width: number): number {
+  return width < 380 ? 2 : 4;
 }
 
 export type MetricKey = 'winding' | 'margin' | 'raw' | 'peri' | 'apo' | 'ecc' | 'inc';
@@ -130,12 +197,75 @@ export function metricCursorText(key: MetricKey, member: Member): string {
   }
 }
 
+export type XAxisKey = 'hp' | 'ha' | 'ecc' | 'energy';
+
+interface XAxisOption { key: XAxisKey; label: string }
+
+const X_AXIS_OPTIONS: XAxisOption[] = [
+  { key: 'hp', label: 'h_p (km)' },
+  { key: 'ha', label: 'h_a (km)' },
+  { key: 'ecc', label: 'eccentricity' },
+  { key: 'energy', label: 'energy (near-degenerate for resonant families)' },
+];
+
+/** Per-member value for the chosen x-axis, indexed by TRUE member index (raw storage order —
+ * callers reindex through `displayOrder`/`orientedOrder` for plotting). */
+export function xAxisValues(family: Family, mode: XAxisKey, terms: Terms): number[] {
+  switch (mode) {
+    case 'hp': return family.members.map((m) => m.r_peri_km - MOON_RADIUS_KM);
+    case 'ha': return family.members.map((m) => m.r_apo_km - MOON_RADIUS_KM);
+    case 'ecc': return family.members.map((m) => m.elements.e);
+    case 'energy': return family.members.map((m) => energyNd(m.state0, terms));
+    default: return [];
+  }
+}
+
+function xAxisTitle(mode: XAxisKey): string {
+  switch (mode) {
+    case 'hp': return 'peri alt (km)';
+    case 'ha': return 'apo alt (km)';
+    case 'ecc': return 'eccentricity';
+    case 'energy': return 'energy (nondim)';
+    default: return '';
+  }
+}
+
+function formatXTick(mode: XAxisKey, v: number, e0: number): string {
+  switch (mode) {
+    case 'hp':
+    case 'ha': return `${Math.round(v)} km`;
+    case 'ecc': return v.toFixed(2);
+    case 'energy': return formatEnergyOffset(v - e0);
+    default: return String(v);
+  }
+}
+
+export const DEFAULT_METRIC: MetricKey = 'winding';
+export const DEFAULT_X_AXIS: XAxisKey = 'hp';
+
+/** Type guards for AppState.metric/xAxis, which are loosely-typed `string` at the store level
+ * (see state.ts) — validates a stored/hydrated value is actually one of this version's known
+ * options before trusting it as the specific key type. */
+function isMetricKey(v: string): v is MetricKey {
+  return METRIC_OPTIONS.some((o) => o.key === v);
+}
+function isXAxisKey(v: string): v is XAxisKey {
+  return X_AXIS_OPTIONS.some((o) => o.key === v);
+}
+
 export interface StabilityPlot {
-  setFamily(family: Family): void;
+  setFamily(family: Family, terms: Terms): void;
   refresh(): void;
 }
 
-export function mountStabilityPlot(container: HTMLElement, store: Store): StabilityPlot {
+/**
+ * `headerAside`, when given, is an external slot (the pane header's right-aligned area in the
+ * bottom three-pane layout) to host the two `<select>`s instead of floating them over the SVG.
+ * Falls back to appending inside `container` so the plot stays usable when mounted standalone.
+ */
+export function mountStabilityPlot(
+  container: HTMLElement, store: Store, headerAside?: HTMLElement,
+): StabilityPlot {
   container.innerHTML = '';
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', 'stability-svg');
@@ -149,14 +279,46 @@ export function mountStabilityPlot(container: HTMLElement, store: Store): Stabil
     o.textContent = opt.label;
     select.appendChild(o);
   }
-  container.appendChild(select);
+  (headerAside ?? container).appendChild(select);
+
+  const xSelect = document.createElement('select');
+  xSelect.className = 'metric-select';
+  for (const opt of X_AXIS_OPTIONS) {
+    const o = document.createElement('option');
+    o.value = opt.key;
+    o.textContent = opt.label;
+    xSelect.appendChild(o);
+  }
+  (headerAside ?? container).appendChild(xSelect);
 
   let family: Family | null = null;
-  let activeMetric: MetricKey = 'winding';
-  select.value = activeMetric;
+  let terms: Terms | null = null;
+
+  // Selections live in the Store (AppState.metric/xAxis), not closure-local variables: any
+  // redraw path re-reads the authoritative current value instead of trusting a variable only
+  // this closure owns, and the choice survives a sessionStorage-hydrated reload (see main.ts).
+  // Values that don't match a known option (a garbage/foreign/future-version string that slid
+  // past hydrateUIState's basic type check) fall back to this module's own default rather than
+  // rendering a blank/broken selection.
+  const getActiveMetric = (): MetricKey => {
+    const m = store.get().metric;
+    return isMetricKey(m) ? m : DEFAULT_METRIC;
+  };
+  const getActiveXAxis = (): XAxisKey => {
+    const x = store.get().xAxis;
+    return isXAxisKey(x) ? x : DEFAULT_X_AXIS;
+  };
+
+  select.value = getActiveMetric();
+  xSelect.value = getActiveXAxis();
+  // The <select> elements themselves are created once, here, and never rebuilt — draw() only
+  // ever touches their `.value`, so an unrelated redraw (member/family change, resize) can't
+  // reset the user's selection out from under them.
   select.addEventListener('change', () => {
-    activeMetric = select.value as MetricKey;
-    draw();
+    store.update({ metric: select.value });
+  });
+  xSelect.addEventListener('change', () => {
+    store.update({ xAxis: xSelect.value });
   });
 
   const el = (name: string, attrs: Record<string, string>): SVGElement => {
@@ -173,8 +335,16 @@ export function mountStabilityPlot(container: HTMLElement, store: Store): Stabil
   const innerWidth = (): number =>
     Math.max(10, (container.clientWidth || 800) - MARGIN.left - MARGIN.right);
 
+  /** Display-rank order for the active x-axis: hp-sorted, then oriented (possibly reversed as
+   * a whole) so the chosen axis variable itself reads ascending left-to-right. */
+  const orderFor = (fam: Family, mode: XAxisKey, t: Terms): { order: number[]; values: number[] } => {
+    const base = displayOrder(fam);
+    const values = xAxisValues(fam, mode, t);
+    return { order: orientedOrder(base, values), values };
+  };
+
   /** The raw ν₁/ν₂ symlog view: two polylines, sample dots, and the ±1 stability boundary. */
-  function drawRaw(members: Member[], n: number, x: ScaleLinear<number, number>, ih: number): void {
+  function drawRaw(members: Member[], n: number, xAt: (i: number) => number, ih: number): void {
     const domain = symlogDomain(members.flatMap((m) => [m.nu1, m.nu2]));
     const y = scaleLinear().domain(domain).range([MARGIN.top + ih, MARGIN.top]);
 
@@ -190,11 +360,11 @@ export function mountStabilityPlot(container: HTMLElement, store: Store): Stabil
     }
 
     const series = (pick: (i: number) => number, cls: string): void => {
-      const pts = members.map((_, i) => `${x(i)},${y(symlog(pick(i)))}`).join(' ');
+      const pts = members.map((_, i) => `${xAt(i)},${y(symlog(pick(i)))}`).join(' ');
       svg.appendChild(el('polyline', { points: pts, class: cls }));
       for (let i = 0; i < n; i++) {
         svg.appendChild(el('circle', {
-          cx: String(x(i)), cy: String(y(symlog(pick(i)))), r: '2', class: `${cls}-dot`,
+          cx: String(xAt(i)), cy: String(y(symlog(pick(i)))), r: '2', class: `${cls}-dot`,
         }));
       }
     };
@@ -211,7 +381,7 @@ export function mountStabilityPlot(container: HTMLElement, store: Store): Stabil
 
   /** Any single-series metric: one polyline + sample dots, linear or log10 y-axis. */
   function drawSingle(
-    key: SingleMetricKey, members: Member[], n: number, x: ScaleLinear<number, number>, ih: number,
+    key: SingleMetricKey, members: Member[], n: number, xAt: (i: number) => number, ih: number,
   ): void {
     const values = members.map((m) => singleMetricValue(key, m));
     const isLog = key === 'margin';
@@ -219,10 +389,10 @@ export function mountStabilityPlot(container: HTMLElement, store: Store): Stabil
     const y = scaleLinear().domain([domLo, domHi]).range([MARGIN.top + ih, MARGIN.top]);
     const yOf = (v: number): number => (isLog ? y(Math.log10(Math.max(1e-6, v))) : y(v));
 
-    const pts = members.map((_, i) => `${x(i)},${yOf(values[i])}`).join(' ');
+    const pts = members.map((_, i) => `${xAt(i)},${yOf(values[i])}`).join(' ');
     svg.appendChild(el('polyline', { points: pts, class: 'metric-line' }));
     for (let i = 0; i < n; i++) {
-      svg.appendChild(el('circle', { cx: String(x(i)), cy: String(yOf(values[i])), r: '2', class: 'metric-dot' }));
+      svg.appendChild(el('circle', { cx: String(xAt(i)), cy: String(yOf(values[i])), r: '2', class: 'metric-dot' }));
     }
 
     if (isLog) {
@@ -244,57 +414,98 @@ export function mountStabilityPlot(container: HTMLElement, store: Store): Stabil
 
   function draw(): void {
     svg.innerHTML = '';
-    if (!family) return;
+    // Sync every render path — a redraw is never allowed to silently reset the user's choice,
+    // and this is also how a post-mount sessionStorage hydration (or another tab's change,
+    // were the store ever shared) becomes visible in the header.
+    const activeMetric = getActiveMetric();
+    const activeXAxis = getActiveXAxis();
+    select.value = activeMetric;
+    xSelect.value = activeXAxis;
+    if (!family || !terms) return;
+    const fam = family;
     const w = container.clientWidth || 800;
-    const h = container.clientHeight || 210;
+    const h = container.clientHeight || 230;
     const iw = innerWidth();
     const ih = Math.max(10, h - MARGIN.top - MARGIN.bottom);
     svg.setAttribute('width', String(w));
     svg.setAttribute('height', String(h));
     svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
 
-    const members = family.members;
-    const n = members.length;
-    const x = scaleLinear().domain([0, Math.max(1, n - 1)]).range([MARGIN.left, MARGIN.left + iw]);
+    const n = fam.members.length;
+    const hpOrder = displayOrder(fam);
+    const { order, values } = orderFor(fam, activeXAxis, terms);
+    const orderedMembers = order.map((idx) => fam.members[idx]);
+    const orderedValues = order.map((idx) => values[idx]);
+    const [xLo, xHi] = linearDomain(orderedValues);
+    const x = scaleLinear().domain([xLo, xHi]).range([MARGIN.left, MARGIN.left + iw]);
+    const xAt = (rank: number): number => x(orderedValues[rank]);
 
     if (activeMetric === 'raw') {
-      drawRaw(members, n, x, ih);
+      drawRaw(orderedMembers, n, xAt, ih);
     } else {
-      drawSingle(activeMetric, members, n, x, ih);
+      drawSingle(activeMetric, orderedMembers, n, xAt, ih);
     }
 
-    const idx = Math.min(Math.max(0, store.get().memberIndex), n - 1);
+    const trueIdx = Math.min(Math.max(0, store.get().memberIndex), n - 1);
+    const cursorRank = Math.max(0, order.indexOf(trueIdx));
     svg.appendChild(el('line', {
-      x1: String(x(idx)), x2: String(x(idx)),
+      x1: String(xAt(cursorRank)), x2: String(xAt(cursorRank)),
       y1: String(MARGIN.top), y2: String(MARGIN.top + ih), class: 'cursor',
     }));
 
-    // The x-axis is an unlabeled family parameter — no member-count text. Anchor the two
-    // ends with the endpoint members' periapsis altitude instead; sampling itself is only
-    // hinted at by the small dots drawn along the active series.
+    // X-axis: title, then tick labels — energy uses engineering-offset-from-E0 notation (its
+    // span is tiny relative to |E| ~ 1.8); the others are plain values in their own units.
+    svg.appendChild(text(
+      { x: String(MARGIN.left + iw / 2), y: String(h - 34), class: 'axis-label', 'text-anchor': 'middle' },
+      xAxisTitle(activeXAxis),
+    ));
+    const e0 = Math.min(...orderedValues);
+    for (const t of x.ticks(xTickCount(w))) {
+      svg.appendChild(text(
+        { x: String(x(t)), y: String(h - 20), class: 'tick', 'text-anchor': 'middle' },
+        formatXTick(activeXAxis, t, e0),
+      ));
+    }
+
+    // Endpoint hp labels stay as a secondary annotation under the x-axis regardless of which
+    // axis is active — display order is periapsis-altitude-sorted, so these are always the
+    // family's true min/max hp members now (not just its first/last shooting endpoints).
     const hpOf = (m: Member): string => (m.r_peri_km - MOON_RADIUS_KM).toFixed(0);
     svg.appendChild(text(
-      { x: String(MARGIN.left), y: String(h - 8), class: 'tick' },
-      `hp ${hpOf(members[0])} km`,
+      { x: String(MARGIN.left), y: String(h - 6), class: 'tick' },
+      `hp ${hpOf(fam.members[hpOrder[0]])} km`,
     ));
     svg.appendChild(text(
-      { x: String(MARGIN.left + iw), y: String(h - 8), class: 'tick', 'text-anchor': 'end' },
-      `hp ${hpOf(members[n - 1])} km`,
+      { x: String(MARGIN.left + iw), y: String(h - 6), class: 'tick', 'text-anchor': 'end' },
+      `hp ${hpOf(fam.members[hpOrder[n - 1]])} km`,
     ));
 
     svg.appendChild(text(
       { x: String(MARGIN.left + 6), y: String(MARGIN.top + 12), class: 'legend' },
-      metricCursorText(activeMetric, members[idx]),
+      metricCursorText(activeMetric, fam.members[trueIdx]),
     ));
+    if (activeXAxis === 'energy') {
+      svg.appendChild(text(
+        { x: String(MARGIN.left + 6), y: String(MARGIN.top + 26), class: 'legend-e0' },
+        energyLegendLabel(e0),
+      ));
+    }
   }
 
   let dragging = false;
   const pickMember = (ev: MouseEvent): void => {
-    if (!family) return;
+    if (!family || !terms) return;
+    const fam = family;
     const rect = svg.getBoundingClientRect();
     const iw = Math.max(10, rect.width - MARGIN.left - MARGIN.right);
-    const idx = indexFromX(ev.clientX - rect.left - MARGIN.left, iw, family.members.length);
-    if (idx !== store.get().memberIndex) store.update({ memberIndex: idx, animTime: 0 });
+    const { order, values } = orderFor(fam, getActiveXAxis(), terms);
+    const orderedValues = order.map((idx) => values[idx]);
+    const [xLo, xHi] = linearDomain(orderedValues);
+    const x = scaleLinear().domain([xLo, xHi]).range([MARGIN.left, MARGIN.left + iw]);
+    const target = x.invert(ev.clientX - rect.left);
+    const rank = memberIndexFromEnergy(orderedValues, target);
+    const trueIdx = order[rank] ?? 0;
+    if (trueIdx !== store.get().memberIndex) store.update({ memberIndex: trueIdx, animTime: 0 });
   };
 
   svg.addEventListener('mousedown', (ev) => {
@@ -309,12 +520,16 @@ export function mountStabilityPlot(container: HTMLElement, store: Store): Stabil
   });
   window.addEventListener('resize', () => draw());
   store.subscribe((s, p) => {
-    if (s.memberIndex !== p.memberIndex || s.familyN !== p.familyN || s.comboId !== p.comboId) draw();
+    if (
+      s.memberIndex !== p.memberIndex || s.familyN !== p.familyN || s.comboId !== p.comboId
+      || s.metric !== p.metric || s.xAxis !== p.xAxis
+    ) draw();
   });
 
   return {
-    setFamily(f) {
+    setFamily(f, t) {
       family = f;
+      terms = t;
       draw();
     },
     refresh: draw,

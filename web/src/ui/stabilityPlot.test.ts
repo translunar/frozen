@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { makeMember } from '../testFixtures';
+import { makeFamily, makeMember } from '../testFixtures';
+import type { Terms } from '../types';
 import {
-  indexFromX, linearDomain, log10Domain, log10TickLabel,
-  metricCursorText, singleMetricValue, symlogDomain,
+  energyLegendLabel, formatEnergyOffset, indexFromX, linearDomain, log10Domain,
+  log10TickLabel, memberIndexFromEnergy, metricCursorText, orientedOrder, singleMetricValue,
+  symlogDomain, xAxisValues, xTickCount,
 } from './stabilityPlot';
+
+const FULL_TERMS: Terms = { j2: true, c22: true, j3: true, earth: true };
 
 describe('symlogDomain', () => {
   it('always shows the ±1 stability boundary with headroom', () => {
@@ -89,5 +93,121 @@ describe('metricCursorText', () => {
     const m = makeMember(0, { r_peri_km: 2400, r_apo_km: 9600 });
     expect(metricCursorText('peri', m)).toBe('peri alt = 663 km');
     expect(metricCursorText('apo', m)).toBe('apo alt = 7863 km');
+  });
+});
+
+describe('memberIndexFromEnergy', () => {
+  it('picks the member whose energy is closest to the target', () => {
+    const energies = [-1.7950, -1.7947, -1.7940, -1.7930];
+    expect(memberIndexFromEnergy(energies, -1.7947)).toBe(1); // exact hit
+    expect(memberIndexFromEnergy(energies, -1.7938)).toBe(2); // closer to index 2 than 3
+    expect(memberIndexFromEnergy(energies, -2)).toBe(0);      // clamps to the nearest end
+    expect(memberIndexFromEnergy(energies, 0)).toBe(3);
+  });
+
+  it('keeps the earlier index on an exact tie', () => {
+    expect(memberIndexFromEnergy([1, 3], 2)).toBe(0);
+  });
+
+  it('is 0 for an empty energy list (degenerate guard)', () => {
+    expect(memberIndexFromEnergy([], 5)).toBe(0);
+  });
+
+  it('honestly follows a non-monotone (folded) energy sequence rather than assuming sorted input', () => {
+    // A fold: energies rise then fall across member order 0..3.
+    const energies = [-1.795, -1.793, -1.794, -1.796];
+    expect(memberIndexFromEnergy(energies, -1.7934)).toBe(1); // closer to -1.793 than -1.794
+    expect(memberIndexFromEnergy(energies, -1.7955)).toBe(3); // closer to -1.796 than -1.795
+  });
+});
+
+describe('formatEnergyOffset', () => {
+  it('formats a positive offset from E0 in engineering notation', () => {
+    expect(formatEnergyOffset(3.2e-4)).toBe('E₀ + 3.2e-4');
+  });
+
+  it('formats a negative offset with a unicode minus', () => {
+    expect(formatEnergyOffset(-1.1e-5)).toBe('E₀ − 1.1e-5');
+  });
+
+  it('is the bare E0 label at exactly zero offset', () => {
+    expect(formatEnergyOffset(0)).toBe('E₀');
+  });
+});
+
+describe('energyLegendLabel', () => {
+  it('formats a negative E0 to 5 decimals with a unicode minus', () => {
+    expect(energyLegendLabel(-1.794706268957019)).toBe('E₀ = −1.79471');
+  });
+
+  it('formats a positive E0 with no leading sign', () => {
+    expect(energyLegendLabel(0.318592767741606)).toBe('E₀ = 0.31859');
+  });
+});
+
+describe('xTickCount', () => {
+  it('thins to 2 ticks when the pane is narrower than ~380px', () => {
+    expect(xTickCount(379)).toBe(2);
+    expect(xTickCount(200)).toBe(2);
+  });
+
+  it('stays at 4 ticks at 380px and wider', () => {
+    expect(xTickCount(380)).toBe(4);
+    expect(xTickCount(800)).toBe(4);
+  });
+});
+
+describe('xAxisValues', () => {
+  it('reads hp/ha/eccentricity straight off each member, in raw (true-index) order', () => {
+    const family = makeFamily(25, 2);
+    family.members[0].r_peri_km = 2_400;
+    family.members[0].r_apo_km = 9_600;
+    family.members[0].elements.e = 0.6;
+    family.members[1].r_peri_km = 2_200;
+    family.members[1].r_apo_km = 9_800;
+    family.members[1].elements.e = 0.65;
+    const hp = xAxisValues(family, 'hp', FULL_TERMS);
+    const ha = xAxisValues(family, 'ha', FULL_TERMS);
+    hp.forEach((v, i) => expect(v).toBeCloseTo([662.6, 462.6][i], 9));
+    ha.forEach((v, i) => expect(v).toBeCloseTo([7862.6, 8062.6][i], 9));
+    expect(xAxisValues(family, 'ecc', FULL_TERMS)).toEqual([0.6, 0.65]);
+  });
+
+  it('computes energy via energyNd for the "energy" mode', () => {
+    const family = makeFamily(25, 1);
+    const values = xAxisValues(family, 'energy', FULL_TERMS);
+    expect(values).toHaveLength(1);
+    expect(Number.isFinite(values[0])).toBe(true);
+  });
+});
+
+describe('orientedOrder', () => {
+  it('leaves the order unchanged when values already ascend along it', () => {
+    const order = [2, 0, 1];
+    // Value at each order slot: values[2]=10, values[0]=20, values[1]=30 -> already ascending.
+    const values = [20, 30, 10];
+    expect(orientedOrder(order, values)).toBe(order); // same reference: no reversal needed
+  });
+
+  it('reverses the order when values descend along it', () => {
+    const order = [0, 1, 2];
+    const values = [30, 20, 10]; // descending along the given order
+    expect(orientedOrder(order, values)).toEqual([2, 1, 0]);
+  });
+
+  it('is a no-op for a 0- or 1-length order', () => {
+    expect(orientedOrder([], [])).toEqual([]);
+    expect(orientedOrder([0], [42])).toEqual([0]);
+  });
+
+  it('documents the endpoint-only guarantee: ascending endpoints pass through even when the interior locally zigzags', () => {
+    // Endpoints ascend (10 -> 30), so no reversal — but the interior rises and falls
+    // (10, 50, 20, 60, 30): not globally monotone. orientedOrder only ever reverses the whole
+    // walk or leaves it alone; it never re-sorts point-by-point to iron this out, so the
+    // interior zigzag survives untouched. This is the near-degenerate case the "energy"
+    // x-axis option's label warns about — see the module docstring above orientedOrder.
+    const order = [0, 1, 2, 3, 4];
+    const values = [10, 50, 20, 60, 30];
+    expect(orientedOrder(order, values)).toBe(order); // unchanged: endpoints already ascend
   });
 });

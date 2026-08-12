@@ -1,30 +1,39 @@
 import type { Store } from '../state';
-import type { Family, Member } from '../types';
+import type { Family, Member, Terms } from '../types';
 import { mountMoonTrackPanel } from './groundTrack';
-import { mountSkyViewPanel } from './skyView';
+import { mountSkyViewPanel, occultedFraction } from './skyView';
 import { mountStabilityPlot } from './stabilityPlot';
 
-export type TabKey = 'metrics' | 'moon' | 'earth';
+export type PaneKey = 'metrics' | 'moon' | 'earth';
 
-const TABS: Array<{ key: TabKey; label: string }> = [
-  { key: 'metrics', label: 'Metrics' },
-  { key: 'moon', label: 'Moon track' },
-  { key: 'earth', label: 'Earth view' },
-];
+const PANES: PaneKey[] = ['metrics', 'moon', 'earth'];
+const PANE_TITLES: Record<PaneKey, string> = {
+  metrics: 'Family metrics',
+  moon: 'Moon ground track',
+  earth: 'Earth view',
+};
+// Matches the grid's default `1.2fr 1.2fr 0.8fr` — sky view is squarer and needs less width.
+const PANE_FR: Record<PaneKey, number> = { metrics: 1.2, moon: 1.2, earth: 0.8 };
+const COLLAPSED_WIDTH = '28px';
 
 export interface BottomPanel {
-  setFamily(family: Family): void;
+  setFamily(family: Family, terms: Terms): void;
   setMember(traj: Float32Array | null, member: Member, resonanceN: number): void;
   setAnimTime(t: number): void;
   refresh(): void;
 }
 
 /**
- * Tabbed bottom section: Metrics (the existing family stability strip, unchanged), Moon
- * ground track, and Earth plane-of-sky view. Tab selection is local UI state, not stored in
- * the app Store. Each panel is driven externally (setFamily / setMember / setAnimTime) rather
- * than subscribing to the store itself; switching tabs re-renders the newly-shown pane, since
- * an SVG drawn while its container was `display: none` would have measured a zero-size box.
+ * Three-pane bottom section, all panes always visible side by side: Family metrics, Moon
+ * ground track, Earth plane-of-sky view. Previously these were tabbed (one super-expanded
+ * pane at a time); a `display:none` pane can't be measured or drawn into, so switching tabs
+ * had to force a redraw of the newly-shown pane. With all three panes always in the document
+ * flow that workaround is gone — each panel just re-measures its own container on mount,
+ * on `setMember`/`setFamily`, and on window resize, same as before.
+ *
+ * Each panel is driven externally (setFamily / setMember / setAnimTime) rather than
+ * subscribing to the store itself. A pane header click collapses that pane to a slim vertical
+ * restore bar, giving the other two more room; nothing is persisted, all panes start open.
  */
 export function mountBottomPanel(container: HTMLElement, store: Store): BottomPanel {
   container.innerHTML = '';
@@ -32,54 +41,77 @@ export function mountBottomPanel(container: HTMLElement, store: Store): BottomPa
   root.className = 'bottom-panel';
   container.appendChild(root);
 
-  const tabBar = document.createElement('div');
-  tabBar.className = 'tab-bar';
-  root.appendChild(tabBar);
+  const collapsed = new Set<PaneKey>();
+  const bodyEls = {} as Record<PaneKey, HTMLDivElement>;
+  const asideEls = {} as Record<PaneKey, HTMLSpanElement>;
+  const paneEls = {} as Record<PaneKey, HTMLDivElement>;
 
-  const paneEls: Record<TabKey, HTMLDivElement> = {
-    metrics: document.createElement('div'),
-    moon: document.createElement('div'),
-    earth: document.createElement('div'),
-  };
-  const buttons = new Map<TabKey, HTMLButtonElement>();
-  for (const t of TABS) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'tab-btn';
-    btn.textContent = t.label;
-    btn.addEventListener('click', () => setActive(t.key));
-    tabBar.appendChild(btn);
-    buttons.set(t.key, btn);
+  for (const key of PANES) {
+    const pane = document.createElement('div');
+    pane.className = 'bpane';
 
-    paneEls[t.key].className = 'tab-pane';
-    root.appendChild(paneEls[t.key]);
+    const header = document.createElement('div');
+    header.className = 'bpane-header';
+    const title = document.createElement('span');
+    title.className = 'bpane-title';
+    title.textContent = PANE_TITLES[key];
+    const aside = document.createElement('span');
+    aside.className = 'bpane-aside';
+    // The metrics pane hosts an interactive <select> in its aside slot — stop its clicks
+    // (opening the dropdown, picking an option) from bubbling up and collapsing the pane.
+    aside.addEventListener('click', (ev) => ev.stopPropagation());
+    header.append(title, aside);
+    header.title = 'Click to collapse / restore';
+    header.addEventListener('click', () => toggleCollapse(key));
+
+    const body = document.createElement('div');
+    body.className = 'bpane-body';
+
+    pane.append(header, body);
+    root.appendChild(pane);
+    paneEls[key] = pane;
+    bodyEls[key] = body;
+    asideEls[key] = aside;
   }
 
-  const metrics = mountStabilityPlot(paneEls.metrics, store);
-  const moon = mountMoonTrackPanel(paneEls.moon);
-  const earth = mountSkyViewPanel(paneEls.earth);
+  const metrics = mountStabilityPlot(bodyEls.metrics, store, asideEls.metrics);
+  const moon = mountMoonTrackPanel(bodyEls.moon);
+  const earth = mountSkyViewPanel(bodyEls.earth);
 
-  let active: TabKey = 'metrics';
-
-  function setActive(key: TabKey): void {
-    active = key;
-    for (const t of TABS) {
-      paneEls[t.key].style.display = t.key === key ? 'block' : 'none';
-      buttons.get(t.key)?.classList.toggle('active', t.key === key);
+  function applyLayout(): void {
+    root.style.gridTemplateColumns = PANES
+      .map((key) => (collapsed.has(key) ? COLLAPSED_WIDTH : `${PANE_FR[key]}fr`))
+      .join(' ');
+    for (const key of PANES) {
+      const isCollapsed = collapsed.has(key);
+      paneEls[key].classList.toggle('collapsed', isCollapsed);
+      bodyEls[key].style.display = isCollapsed ? 'none' : 'block';
     }
-    if (key === 'metrics') metrics.refresh();
-    else if (key === 'moon') moon.refresh();
-    else earth.refresh();
   }
-  setActive(active);
+
+  function toggleCollapse(key: PaneKey): void {
+    if (collapsed.has(key)) {
+      collapsed.delete(key);
+      applyLayout();
+      // Coming back from `display:none`: re-measure and redraw now that the body has real size.
+      if (key === 'metrics') metrics.refresh();
+      else if (key === 'moon') moon.refresh();
+      else earth.refresh();
+    } else {
+      collapsed.add(key);
+      applyLayout();
+    }
+  }
+  applyLayout();
 
   return {
-    setFamily(family) {
-      metrics.setFamily(family);
+    setFamily(family, terms) {
+      metrics.setFamily(family, terms);
     },
     setMember(traj, member, resonanceN) {
       moon.setMember(traj, member.period_s, resonanceN);
       earth.setMember(traj, member.period_s, resonanceN);
+      asideEls.earth.textContent = traj ? `outage ${(occultedFraction(traj) * 100).toFixed(1)}%` : '';
     },
     setAnimTime(t) {
       moon.setAnimTime(t);
