@@ -70,8 +70,14 @@ pub fn write_f32(path: &Path, pts: &[[f64; 3]]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Decimate a trajectory to at most `max_points` points by uniform stride
-/// sampling. Used to build per-family preview tracks.
+/// Decimate a trajectory to at most `max_points` points, evenly spaced across
+/// the full range and always including the final point. Used to build
+/// per-family preview tracks.
+///
+/// A plain `i * (len/max_points)` stride from the start never lands exactly on
+/// the last sample, so the previous version silently dropped the trajectory's
+/// closing point. Spacing indices across `[0, len-1]` instead (rather than
+/// `[0, len)`) fixes that at the same cost.
 pub fn decimate(pts: &[[f64; 3]], max_points: usize) -> Vec<[f64; 3]> {
     if max_points == 0 || pts.is_empty() {
         return Vec::new();
@@ -79,9 +85,13 @@ pub fn decimate(pts: &[[f64; 3]], max_points: usize) -> Vec<[f64; 3]> {
     if pts.len() <= max_points {
         return pts.to_vec();
     }
-    let step = pts.len() as f64 / max_points as f64;
+    if max_points == 1 {
+        return vec![pts[0]];
+    }
+    let last = pts.len() - 1;
+    let step = last as f64 / (max_points - 1) as f64;
     (0..max_points)
-        .map(|i| pts[((i as f64 * step) as usize).min(pts.len() - 1)])
+        .map(|i| pts[((i as f64 * step).round() as usize).min(last)])
         .collect()
 }
 
@@ -137,5 +147,14 @@ mod tests {
             &std::fs::read_to_string(dir.path().join("catalog.json")).unwrap()).unwrap();
         assert_eq!(v["schema_version"], 1);
         assert!(v["combos"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn decimate_includes_final_point() {
+        let pts: Vec<[f64; 3]> = (0..1000).map(|i| [i as f64, 0.0, 0.0]).collect();
+        let dec = decimate(&pts, 37);
+        assert_eq!(dec.len(), 37);
+        assert_eq!(dec[0], pts[0]);
+        assert_eq!(dec[36], pts[999], "decimate must include the trajectory's final point");
     }
 }

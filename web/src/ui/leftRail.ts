@@ -113,10 +113,19 @@ export function mountLeftRail(
   const gratBox = pick<HTMLInputElement>('#graticule-box');
   gratBox.addEventListener('change', () => hooks.onGraticule(gratBox.checked));
 
-  const currentCombo = (): Combo => comboById(catalog, store.get().comboId) ?? catalog.combos[0];
+  // A zero-family combo is a legitimate catalog outcome (e.g. `no-earth`), so
+  // `catalog.combos[0]`/`combo.families[0]` cannot be trusted as fallbacks —
+  // see main.ts's boot-time guard for the same invariant. `mountLeftRail` is
+  // only called after that guard has passed, so a combo with families is
+  // guaranteed to exist.
+  const safeCombo = catalog.combos.find((c) => c.families.length > 0);
+  if (!safeCombo) {
+    throw new Error('catalog contains no families in any combo — nothing to display');
+  }
+  const currentCombo = (): Combo => comboById(catalog, store.get().comboId) ?? safeCombo;
   const currentFamily = (): Family => {
     const combo = currentCombo();
-    return familyByN(combo, store.get().familyN) ?? combo.families[0];
+    return familyByN(combo, store.get().familyN) ?? combo.families[0] ?? safeCombo.families[0];
   };
 
   function renderToggles(): void {

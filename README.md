@@ -49,7 +49,14 @@ Generated catalog data is git-ignored; only the generator configs are committed.
   Earth off is the headline sensitivity result: in the generated catalog, `no-earth`
   currently yields **zero** frozen families at any of the swept resonances — the
   app reports this via its "no family in this combo" notice rather than an error.
-  **A family being absent is a result, not an error.**
+  **A family being absent is a result, not an error.** Read this honestly, though:
+  absence here means *no family converged from our seeds*, not proof that none
+  exists — and `no-earth` is not a like-for-like comparison in the first place,
+  since its seed is a qualitatively different near-circular J2/J3 frozen geometry
+  (the eccentric Lidov-Kozai-style seed used for the other three combos requires
+  Earth's third-body term to be physically meaningful). Treat this as: the
+  catalog's eccentric, Earth-driven families have no `no-earth` counterpart, not
+  as evidence that frozen orbits cannot exist without Earth.
 - **Families / Member** — pick a resonance, then scrub the member slider. All members
   of the family are drawn as translucent blue loops; the selected one is solid amber.
   Across `full`, `no-c22`, and `no-j3`, families exist at resonances N = 20, 25, 30,

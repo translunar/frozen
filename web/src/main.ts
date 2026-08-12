@@ -14,7 +14,15 @@ const CATALOG_BASE = 'catalog';
 
 async function boot(): Promise<void> {
   const catalog = await loadCatalog(CATALOG_BASE);
-  const combo0 = catalog.combos[0];
+  // A zero-family combo is a legitimate catalog outcome (e.g. `no-earth`), and
+  // nothing guarantees combos[0] is the populated one — catalog.toml ordering
+  // must not decide whether boot crashes. Pick the first combo that actually
+  // has a family; if none does, fail through the existing error-banner path
+  // with a readable message instead of a TypeError on `.families[0]`.
+  const combo0 = catalog.combos.find((c) => c.families.length > 0);
+  if (!combo0) {
+    throw new Error('catalog contains no families in any combo — nothing to display');
+  }
   const family0 = combo0.families[0];
 
   const store = createStore({
@@ -32,10 +40,14 @@ async function boot(): Promise<void> {
   stage.scene.add(satellite.group);
   const plot = mountStabilityPlot(document.getElementById('plot') as HTMLElement, store);
 
-  const currentCombo = (): Combo => comboById(catalog, store.get().comboId) ?? catalog.combos[0];
+  const currentCombo = (): Combo => comboById(catalog, store.get().comboId) ?? combo0;
   const currentFamily = (): Family => {
     const combo = currentCombo();
-    return familyByN(combo, store.get().familyN) ?? combo.families[0];
+    // `combo0`/`family0` are known non-empty (checked above); fall back to
+    // them rather than blindly indexing `combo.families[0]`, which would be
+    // undefined for a combo the store should never point at but a future
+    // caller might (see the boot-time bug this guards against).
+    return familyByN(combo, store.get().familyN) ?? combo.families[0] ?? family0;
   };
 
   const rail = mountLeftRail(document.getElementById('rail') as HTMLElement, store, catalog, {

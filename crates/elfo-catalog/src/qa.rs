@@ -20,8 +20,11 @@ pub fn check_member(m: &MemberOut, prev: Option<&MemberOut>) -> Vec<String> {
 
     let peri_floor = R_MOON_KM + PERIAPSIS_MARGIN_KM;
     if m.r_peri_km < peri_floor {
+        // `r_peri_km` and `peri_floor` are both radii from the Moon's centre,
+        // not altitudes above the surface — call them what they are, or a
+        // reader debugging this sees what looks like a 1737 km error.
         flags.push(format!(
-            "member {}: periapsis altitude {:.1} km below floor {:.1} km",
+            "member {}: periapsis radius {:.1} km below floor {:.1} km",
             m.index, m.r_peri_km, peri_floor
         ));
     }

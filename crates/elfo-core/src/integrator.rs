@@ -42,8 +42,20 @@ impl Dp54 {
                      t0: f64, tf: f64, sample_times: &[f64],
                      observer: &mut impl FnMut(f64, &[f64])) -> Vec<f64> {
         let mut t = t0; let mut y = y0.to_vec();
+        assert!(
+            y.iter().all(|v| v.is_finite()),
+            "integrator received a non-finite initial state at t={t0}: y0={y0:?}"
+        );
         let mut k1 = f(t, &y);
         let mut h = (tf - t0) * 1e-4;
+        // A NaN-poisoned state (e.g. a corrector line-search node predicted near
+        // r = 0) makes `err` NaN downstream: `err <= 1.0` is false so the step is
+        // rejected, but `(0.9 * NaN.powf(-0.2)).clamp(...)` is itself NaN, and
+        // `h.min(hmax)` with `h = NaN` returns `hmax` (`f64::min` prefers the
+        // non-NaN operand) — so `htry` stops shrinking and `t` never advances.
+        // Without a floor this spins forever inside a rayon worker with no
+        // diagnostic. Fail loudly instead.
+        let step_floor = 1e-14 * (tf - t0).abs();
         let mut samples = sample_times.iter().copied().peekable();
         // Samples at (or before) the start time can never be reached by the
         // "landed on it" test below; emit them here or they would sit at the head
@@ -54,10 +66,21 @@ impl Dp54 {
             samples.next();
         }
         while t < tf - 1e-15 {
+            if !h.is_finite() || h.abs() < step_floor {
+                panic!(
+                    "integrator step size collapsed: h={h} at t={t} (t0={t0}, tf={tf}), y={y:?}"
+                );
+            }
             let mut hmax = tf - t;
             if let Some(&ts) = samples.peek() { if ts > t + 1e-15 { hmax = hmax.min(ts - t); } }
             let htry = h.min(hmax);
             let (y5, k7, err) = self.step(f, t, &y, htry, &k1);
+            if !err.is_finite() || !y5.iter().all(|v| v.is_finite()) {
+                panic!(
+                    "integrator produced a non-finite state at t={t} (htry={htry}, err={err}): \
+                     y={y:?} -> y5={y5:?}"
+                );
+            }
             if err <= 1.0 {
                 t += htry; y = y5; k1 = k7;
                 // `while`, not `if`: repeated sample times must all be consumed,
@@ -166,6 +189,17 @@ mod tests {
             &mut |t, y| { if seen.is_empty() { first.copy_from_slice(&y[..6]); } seen.push(t) });
         assert_eq!(seen, vec![0.0, 0.1, 0.25, 0.4]);
         assert_eq!(first, y0, "the t0 sample must report the initial state");
+    }
+
+    #[test]
+    #[should_panic(expected = "non-finite initial state")]
+    fn propagate_panics_on_nan_poisoned_initial_state() {
+        // A NaN-poisoned state must fail loudly, not spin `propagate` forever
+        // (NaN falls through the error-controller's clamp/min unnoticed).
+        let fm = kepler_fm();
+        let y0 = [f64::NAN, 0.0, 0.0, 0.0, -0.75, 0.0];
+        let f = |_t: f64, y: &[f64]| fm.eom(&[y[0],y[1],y[2],y[3],y[4],y[5]]).to_vec();
+        Dp54::default().propagate(&f, &y0, 0.0, 0.5, &[], &mut |_, _| {});
     }
 }
 

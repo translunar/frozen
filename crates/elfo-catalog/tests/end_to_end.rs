@@ -3,6 +3,8 @@
 //! directly (no binary spawn), asserting the on-disk layout and invariants
 //! the web browser (Task 16) will rely on.
 
+const MEMBERS_PER_DIRECTION: usize = 2;
+
 const TINY_CONFIG: &str = r#"
 members_per_direction = 2
 ds0 = 5e-4
@@ -42,8 +44,15 @@ fn end_to_end_generates_one_family() {
         "expected >= 3 members, got {}",
         members.len()
     );
+    let max_members = 2 * MEMBERS_PER_DIRECTION + 1;
+    assert!(
+        members.len() <= max_members,
+        "expected <= {max_members} members (2*members_per_direction + 1), got {}",
+        members.len()
+    );
 
     let expected_bytes = (100 * 25 * 3 * 4) as u64; // 100*N samples * xyz * f32
+    let mut prev_state0: Option<Vec<f64>> = None;
     for (i, m) in members.iter().enumerate() {
         assert_eq!(
             m["index"], i as u64,
@@ -55,6 +64,22 @@ fn end_to_end_generates_one_family() {
             residual < 1e-9,
             "member {i}: residual {residual} not < 1e-9"
         );
+
+        let state0: Vec<f64> = m["state0"]
+            .as_array()
+            .expect("state0 array")
+            .iter()
+            .map(|v| v.as_f64().expect("state0 component"))
+            .collect();
+        if let Some(prev) = &prev_state0 {
+            let identical = state0.iter().zip(prev).all(|(a, b)| (a - b).abs() < 1e-15);
+            assert!(
+                !identical,
+                "member {i} state0 duplicates member {}'s state0 (duplicated first member?)",
+                i - 1
+            );
+        }
+        prev_state0 = Some(state0);
 
         let traj_rel = m["traj"].as_str().expect("traj path");
         let traj_path = out_dir.join(traj_rel);

@@ -71,10 +71,19 @@ fn endstate_arr(y: &[f64;6]) -> [f64;6] { *y }
 
 pub fn correct(fm: &ForceModel, nodes: &[[f64;6]], period: f64, constraint: &Constraint)
     -> Result<PeriodicOrbit, String> {
+    correct_with_cap(fm, nodes, period, constraint, 25)
+}
+
+/// `correct()` with an explicit iteration cap, so a test can pin the cap to the
+/// exact iteration count a given seed converges on and prove the boundary case
+/// (convergence landing on the last permitted iteration) returns `Ok`, not
+/// `Err("max iterations")`.
+fn correct_with_cap(fm: &ForceModel, nodes: &[[f64;6]], period: f64, constraint: &Constraint,
+    max_iters: usize) -> Result<PeriodicOrbit, String> {
     let m = nodes.len();
     let mut u = pack(nodes, period);
     let (mut r, mut j, mut stms) = build_system(fm, &u, m, constraint);
-    for _iter in 0..25 {
+    for _iter in 0..max_iters {
         let rn = r.amax();
         if rn < 1e-10 {
             let (nodes, period) = unpack(&u, m);
@@ -117,6 +126,14 @@ pub fn correct(fm: &ForceModel, nodes: &[[f64;6]], period: f64, constraint: &Con
         }
         if !accepted { return Err(format!("stalled at residual {rn}")); }
     }
+    // The loop above only checks convergence *before* taking a step, so a solve
+    // that lands under tolerance on the last permitted iteration's step falls
+    // through here. Re-check the post-step residual before giving up.
+    let rn = r.amax();
+    if rn < 1e-10 {
+        let (nodes, period) = unpack(&u, m);
+        return Ok(PeriodicOrbit { nodes, period, residual: rn, segment_stms: stms });
+    }
     Err("max iterations".into())
 }
 
@@ -140,5 +157,30 @@ mod tests {
         let f = |_t: f64, y: &[f64]| fm.eom(&[y[0],y[1],y[2],y[3],y[4],y[5]]).to_vec();
         let yf = integ.propagate(&f, &orbit.nodes[0], 0.0, orbit.period, &[], &mut |_,_|{});
         for k in 0..6 { assert!((yf[k] - orbit.nodes[0][k]).abs() < 1e-8, "k={k}"); }
+    }
+
+    #[test]
+    fn convergence_landing_on_the_final_iteration_returns_ok() {
+        // Regression for a bug where `correct()` only checked ‖R‖∞ < 1e-10 at
+        // the *top* of the loop: a solve whose last accepted step lands under
+        // tolerance was falling through to `Err("max iterations")`. Find the
+        // minimal iteration cap K at which the DRO seed first converges, then
+        // confirm `correct_with_cap(..., K)` — which forces convergence to
+        // land on the loop's very last permitted iteration — returns `Ok`.
+        // Pre-fix, this exact case returned `Err`.
+        let fm = ForceModel { j2: false, c22: false, j3: false, earth: true };
+        let x0 = 0.04;
+        let vc = (MU_MOON_ND / x0).sqrt();
+        let seed = [x0, 0.0, 0.0, 0.0, -(vc + x0), 0.0];
+        let t0 = std::f64::consts::TAU / (vc / x0 + 1.0);
+        let nodes = seed_nodes(&fm, &seed, t0, 4);
+
+        let k_min = (1..=25)
+            .find(|&k| correct_with_cap(&fm, &nodes, t0, &Constraint::None, k).is_ok())
+            .expect("DRO seed should converge within 25 iterations");
+
+        let orbit = correct_with_cap(&fm, &nodes, t0, &Constraint::None, k_min)
+            .expect("convergence landing on the final permitted iteration must return Ok");
+        assert!(orbit.residual < 1e-10);
     }
 }
