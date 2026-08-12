@@ -16,12 +16,13 @@ describe('formatReadout', () => {
     expect(get('i (EM plane)')).toBe('57.00°');
     expect(get('period')).toBe('27.322 d');
     expect(get('revs')).toBe('25');
+    expect(get('syn revs')).toBe('27.0'); // synodicRevs(25, 2_360_591) = 27.04... -> 27.0
     expect(get('peri alt')).toBe('663 km');   // 2400 − 1737.4 km
     expect(get('apo alt')).toBe('7863 km');   // 9600 − 1737.4 km
     expect(get('ν₁')).toBe('1.200');
     expect(get('ν₂')).toBe('-0.400');
     expect(get('residual')).toBe('1.0e-11');
-    expect(rows).toHaveLength(12);
+    expect(rows).toHaveLength(13);
   });
 
   it('shows "<M> over <k> closures" for the revs row of a k>1 rational-resonance family', () => {
@@ -77,8 +78,11 @@ describe('familyMainLabel', () => {
 });
 
 describe('familyDualClockLabel', () => {
-  it('is empty for a k=1 family — no second clock to show', () => {
-    expect(familyDualClockLabel(makeFamily(25, 4))).toBe('');
+  it('renders for a k=1 (plain integer) family too — sid-closure revs prints as a bare integer', () => {
+    // revs=25, closures=1, period engineered so synodicRevs(25, periodS) ~= 28.3.
+    const family = makeFamily(25, 3, { closures: 1 });
+    family.members.forEach((m) => { m.period_s = 2_253_924.82; });
+    expect(familyDualClockLabel(family)).toBe('25 rev/sid-closure · 28.3 rev/syn-mo');
   });
 
   it('shows sid-closure and syn-mo revs with a badge when the gate passes', () => {

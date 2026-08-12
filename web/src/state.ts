@@ -239,6 +239,11 @@ export function synodicRevs(revs: number, periodS: number): number {
   return periodS > 0 ? revs * (SYNODIC_MONTH_S / periodS) : 0;
 }
 
+/** Whole numbers print bare; anything else gets one decimal (74.5, not 74.50 or 74.5000001). */
+export function formatRevs(x: number): string {
+  return Number.isInteger(x) ? String(x) : x.toFixed(1);
+}
+
 export interface RationalFit { p: number; q: number; err: number }
 
 /** Best p/q approximation of x with denominator q <= maxDen, by raw |x - p/q| (brute force). */

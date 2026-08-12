@@ -4,7 +4,8 @@ import { referencesWithin } from '../references';
 import { MOON_RADIUS_KM } from '../scene';
 import type { PresetName } from '../scene';
 import {
-  comboById, familyByN, nearestMemberIndex, resonanceBadge, sidRevsPerClosure, synodicRevs,
+  comboById, familyByN, formatRevs, nearestMemberIndex, resonanceBadge, sidRevsPerClosure,
+  synodicRevs,
 } from '../state';
 import type { Store } from '../state';
 import { familyClosures } from '../types';
@@ -23,6 +24,7 @@ export function formatReadout(member: Member, family: Family): Array<{ label: st
   const revs = closures > 1
     ? `${family.resonance_n} over ${closures} closures`
     : `${family.resonance_n}`;
+  const synRevs = synodicRevs(family.resonance_n, member.period_s);
   return [
     { label: 'a', value: `${e.a_km.toFixed(0)} km` },
     { label: 'e', value: e.e.toFixed(4) },
@@ -31,6 +33,7 @@ export function formatReadout(member: Member, family: Family): Array<{ label: st
     { label: 'Ω', value: `${e.raan_deg.toFixed(2)}°` },
     { label: 'period', value: `${(member.period_s / 86_400).toFixed(3)} d` },
     { label: 'revs', value: revs },
+    { label: 'syn revs', value: synRevs.toFixed(1) },
     { label: 'peri alt', value: `${(member.r_peri_km - MOON_RADIUS_KM).toFixed(0)} km` },
     { label: 'apo alt', value: `${(member.r_apo_km - MOON_RADIUS_KM).toFixed(0)} km` },
     { label: 'ν₁', value: member.nu1.toFixed(3) },
@@ -57,11 +60,6 @@ export function familyHpRangeKm(family: Family): [number, number] {
   return [Math.round(Math.min(...alts)), Math.round(Math.max(...alts))];
 }
 
-/** Whole numbers print bare; anything else gets one decimal (74.5, not 74.50 or 74.5000001). */
-function formatRevs(x: number): string {
-  return Number.isInteger(x) ? String(x) : x.toFixed(1);
-}
-
 /**
  * Family button headline. k=1 is unchanged (`N = 25 · ~26 h/rev`). k>1 (a rational M:k
  * resonance) leads with the per-closure rev count instead of the raw M, with the M:k pair
@@ -79,13 +77,13 @@ export function familyMainLabel(family: Family): string {
 }
 
 /**
- * The dual-clock line shown under a k>1 family button: revs per closure alongside revs per
+ * The dual-clock line shown under every family button: revs per closure alongside revs per
  * synodic month, plus a nearby-rational badge (e.g. `≈161:2 syn (3°)`) when the residual
- * passes `resonanceBadge`'s gate. '' for k=1 families — there's no second clock to show.
+ * passes `resonanceBadge`'s gate. Universal across k=1 and k>1 — for k=1, sid-closure revs is
+ * just the plain integer resonance_n (formatRevs prints it bare, no decimal).
  */
 export function familyDualClockLabel(family: Family): string {
   const closures = familyClosures(family);
-  if (closures <= 1) return '';
   const periodS = family.members[0]?.period_s ?? 0;
   const sid = sidRevsPerClosure(family.resonance_n, closures);
   const syn = synodicRevs(family.resonance_n, periodS);

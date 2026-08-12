@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  comboById, createStore, elapsedRevs, energyNd, familyByN,
+  comboById, createStore, elapsedRevs, energyNd, familyByN, formatRevs,
   librationPeriodMonths, nearestMemberIndex, nearestRational, resonanceBadge,
   samplePosition, sidRevsPerClosure, stabilityMargin, symlog, synodicRevs,
   trailingWindowIndices, windingAngleDeg,
@@ -153,6 +153,18 @@ describe('sidRevsPerClosure', () => {
 
   it('is 0 for a degenerate (non-positive) closure count', () => {
     expect(sidRevsPerClosure(149, 0)).toBe(0);
+  });
+});
+
+describe('formatRevs', () => {
+  it('prints whole numbers bare, no decimal', () => {
+    expect(formatRevs(25)).toBe('25');
+    expect(formatRevs(0)).toBe('0');
+  });
+
+  it('prints one decimal for a non-whole value', () => {
+    expect(formatRevs(74.5)).toBe('74.5');
+    expect(formatRevs(74.5000001)).toBe('74.5');
   });
 });
 
