@@ -1,6 +1,6 @@
 import './style.css';
 import { advanceTime, createLoop, createSatellite, SPEED_DEFAULT } from './anim';
-import { familyPreview, loadCatalog, memberTrajectory, prefetchNeighbors } from './data';
+import { familyPreview, joinUrl, loadCatalog, memberTrajectory, prefetchNeighbors } from './data';
 import { createStage } from './scene';
 import {
   comboById, createStore, familyByN, findCombo, flipTerm, hydrateUIState,
@@ -14,7 +14,9 @@ import { DEFAULT_METRIC, DEFAULT_X_AXIS } from './ui/stabilityPlot';
 import { familyClosures } from './types';
 import type { Combo, Family, Terms } from './types';
 
-const CATALOG_BASE = 'catalog';
+// import.meta.env.BASE_URL carries the deploy-time subpath (e.g. '/tools/frozen/'), so
+// catalog fetches resolve correctly regardless of the page URL's trailing slash.
+const CATALOG_BASE = joinUrl(import.meta.env.BASE_URL, 'catalog');
 // A user's combo/family/member/metric/x-axis choice survives a page reload or an HMR remount
 // during a live demo — sessionStorage rather than localStorage, since it's per-tab context,
 // not a durable preference. Both reads and writes are wrapped defensively: some browsers throw

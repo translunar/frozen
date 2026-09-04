@@ -150,7 +150,7 @@ export function createStage(container: HTMLElement): Stage {
   scene.add(moonPivot);
 
   new THREE.TextureLoader().load(
-    'moon.jpg',
+    `${import.meta.env.BASE_URL}moon.jpg`,
     (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
       moonMat.map = tex;
